@@ -10,7 +10,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 from models import Utterance, Topic, IssueGraph, Intervention, Reference
-from stt import create_engine
+from stt.sensevoice import SenseVoiceEngine
 from analysis.topic import TopicDetector
 from analysis.issues import IssueStructurer
 from analysis.triggers import TriggerDetector
@@ -33,7 +33,7 @@ class Pipeline:
 
     def __init__(self) -> None:
         self.state = MeetingState()
-        self.stt = create_engine()
+        self.stt = SenseVoiceEngine()
         self.topic_detector = TopicDetector()
         self.issue_structurer = IssueStructurer()
         self.trigger_detector = TriggerDetector()

@@ -1,12 +1,11 @@
-"""STT 모듈 — 오디오 캡처, VAD, 음성인식, 화자 분리.
+"""STT 모듈 — 오디오 캡처, VAD, 화자 분리.
 
-흐름: 오디오 입력 → VAD → 청크 분할 → STT 엔진 → 화자 분리 → Utterance
+사용 조합: SenseVoice-Small (STT) + sherpa-onnx (스트리밍/화자분리)
 """
 
 from __future__ import annotations
 
 import asyncio
-from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
 from config import settings
@@ -58,38 +57,3 @@ class VADFilter:
     def is_speech(self, audio_chunk: bytes) -> bool:
         # TODO: silero-vad 추론
         return True
-
-
-# ── STT 엔진 베이스 ────────────────────────────────────────────
-
-
-class BaseSTT(ABC):
-    @abstractmethod
-    def load_model(self) -> None: ...
-
-    @abstractmethod
-    async def transcribe_chunk(self, audio_chunk: bytes) -> Utterance | None: ...
-
-
-def create_engine() -> BaseSTT:
-    """설정에 따라 STT 엔진 인스턴스 반환."""
-    if settings.stt_engine == "faster_whisper":
-        from stt.whisper import FasterWhisperSTT
-        return FasterWhisperSTT()
-    from stt.sensevoice import SenseVoiceSTT
-    return SenseVoiceSTT()
-
-
-# ── 화자 분리 ──────────────────────────────────────────────────
-
-
-class Diarizer:
-    """화자 분리 — sherpa-onnx 내장 diarization 또는 pyannote."""
-
-    def load_model(self) -> None:
-        # TODO: sherpa-onnx 또는 pyannote 모델 로드
-        pass
-
-    async def identify_speaker(self, audio_chunk: bytes) -> str:
-        # TODO: 화자 식별
-        return "unknown"
