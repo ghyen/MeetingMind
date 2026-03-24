@@ -1,8 +1,9 @@
 """토픽 전환 감지 & 안건 세그멘테이션.
 
-2단계 감지:
-  1. 규칙 기반: 긴 침묵(3초+), 키워드("다음 안건", "그건 그렇고" 등)
-  2. LLM 판단: 트리거 조건 충족 시에만 호출 (Gemini Flash)
+3단계 감지:
+  1차 필터: 키워드 1개+ 매칭 또는 긴 침묵(3초+) → 후보 선별
+  2차 필터: 키워드 2개+ 동시 매칭 → LLM 없이 전환 확정
+  3차 판단: 1차 통과 & 2차 미통과 → LLM이 최종 판단
 """
 
 from __future__ import annotations
@@ -37,12 +38,13 @@ class TopicDetector:
             self.segments.append(initial)
             return initial
 
-        if not self._is_trigger(utterance):
+        if not self._first_filter(utterance):
             return None
 
-        # 강한 전환 키워드 조합이면 LLM 없이 바로 전환 확정
-        new_topic = self._force_transition(utterance)
+        # 2차 필터: 키워드 2개+ → LLM 스킵
+        new_topic = self._second_filter(utterance)
         if new_topic is None:
+            # 3차 판단: LLM 최종 판단
             new_topic = await self._llm_judge(utterance)
         if new_topic:
             if self.segments:
@@ -50,12 +52,12 @@ class TopicDetector:
             self.segments.append(new_topic)
         return new_topic
 
-    # 2개 이상 전환 키워드가 동시 매칭되면 LLM 판단 스킵
-    _STRONG_TRANSITION_KEYWORDS = ["마무리", "정리", "넘어가서", "다음 안건", "다음으로"]
+    # 2차 필터 키워드 — 2개+ 동시 매칭 시 전환 확정
+    _SECOND_FILTER_KEYWORDS = ["마무리", "정리", "넘어가서", "다음 안건", "다음으로"]
 
-    def _force_transition(self, utterance: Utterance) -> Topic | None:
-        """강한 전환 신호 감지 시 LLM 없이 토픽 전환 확정."""
-        matched = [kw for kw in self._STRONG_TRANSITION_KEYWORDS if kw in utterance.text]
+    def _second_filter(self, utterance: Utterance) -> Topic | None:
+        """2차 필터: 키워드 2개+ 동시 매칭 → LLM 없이 전환 확정."""
+        matched = [kw for kw in self._SECOND_FILTER_KEYWORDS if kw in utterance.text]
         if len(matched) >= 2:
             self._topic_counter += 1
             # 매칭된 키워드에서 토픽명 유추
@@ -66,8 +68,8 @@ class TopicDetector:
             return Topic(id=self._topic_counter, title=title, start_time=utterance.time)
         return None
 
-    def _is_trigger(self, utterance: Utterance) -> bool:
-        """규칙 기반 1차 필터."""
+    def _first_filter(self, utterance: Utterance) -> bool:
+        """1차 필터: 키워드 1개+ 또는 긴 침묵 → 후보 선별."""
         for keyword in settings.topic_keywords:
             if keyword in utterance.text:
                 return True
@@ -76,7 +78,7 @@ class TopicDetector:
         return False
 
     async def _llm_judge(self, utterance: Utterance) -> Topic | None:
-        """LLM 2차 판단 — 토픽 전환 여부 + 토픽명 추출."""
+        """3차 판단: LLM이 토픽 전환 여부 + 토픽명 최종 결정."""
         context = "\n".join(
             f"[{u.speaker}] {u.text}" for u in self._recent
         )
