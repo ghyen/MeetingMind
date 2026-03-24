@@ -28,14 +28,18 @@ class Entity:
 
 
 class EntityExtractor:
-    """발화에서 검색 가능한 엔티티 추출 (Gemini Flash)."""
+    """발화에서 검색 가능한 엔티티 추출."""
 
     _PROMPT = (
         "다음 회의 발화에서 참조하는 문서, 데이터, 수치, 인물, 조직이 있는지 판단하라.\n"
         "있다면 검색에 사용할 쿼리를 생성하라. 없다면 빈 배열을 반환하라.\n\n"
         '발화: "{text}"\n\n'
+        "예시:\n"
+        '- 발화: "PG사 응답이 3초 넘어가는 케이스가 하루에 열두 건 발생" → {{"entities": [{{"text": "PG사", "type": "org", "query": "PG사 결제 응답 지연 원인"}}]}}\n'
+        '- 발화: "Figma에 업데이트해둘 테니까" → {{"entities": [{{"text": "Figma", "type": "document", "query": "Figma 디자인 시안 공유"}}]}}\n'
+        '- 발화: "네 알겠습니다" → {{"entities": []}}\n\n'
         "JSON 형식으로 응답:\n"
-        '{{"entities": [{{"text": "원문에서 해당 부분", "type": "document|data|person|org|metric", "query": "검색 쿼리"}}]}}'
+        '{{"entities": [{{"text": "원문에서 해당 부분", "type": "document|data|person|org|metric", "query": "웹 검색에 사용할 구체적 쿼리"}}]}}'
     )
 
     async def extract(self, utterance: Utterance) -> list[Entity]:
@@ -45,11 +49,20 @@ class EntityExtractor:
         prompt = self._PROMPT.format(text=utterance.text)
         try:
             result = await ask_json(prompt)
-            return [
-                Entity(text=e["text"], entity_type=e["type"], search_query=e["query"])
-                for e in result.get("entities", [])
-                if isinstance(e, dict) and all(k in e for k in ("text", "type", "query"))
-            ]
+            entities = []
+            for e in result.get("entities", []):
+                if not isinstance(e, dict):
+                    continue
+                text = e.get("text", "")
+                etype = e.get("type", "")
+                query = e.get("query", "").strip()
+                if not text or not etype:
+                    continue
+                # 빈 query면 entity text를 폴백으로 사용
+                if not query:
+                    query = text
+                entities.append(Entity(text=text, entity_type=etype, search_query=query))
+            return entities
         except Exception:
             logger.warning("엔티티 추출 실패: %s", utterance.text[:50], exc_info=True)
             return []
@@ -91,6 +104,8 @@ class WebSearch:
     """Tavily API 기반 웹 검색 + DuckDuckGo 폴백."""
 
     async def search(self, query: str, top_k: int = 3) -> list[Reference]:
+        if not query or not query.strip():
+            return []
         if not settings.tavily_api_key:
             return await self._fallback(query, top_k)
 

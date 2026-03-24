@@ -63,14 +63,8 @@
 
 ---
 
-#### 10. 웹 검색(자료 수집) 실패
-- **현상**: Tavily 검색에서 `"Query is missing"` 에러 → DuckDuckGo 폴백도 실패 → 참고자료 0건
-- **원인**: `EntityExtractor`가 LLM으로 엔티티 추출 시 `search_query`가 빈 문자열로 반환됨. qwen3.5:9b (no-think)가 프롬프트의 JSON 스키마를 정확히 따르지 못하는 것으로 추정
-- **개선 방향**:
-  - `EntityExtractor` 프롬프트 개선 — few-shot 예시 추가, query 필드에 대한 명확한 설명
-  - `search_query`가 비어있으면 `entity.text`를 query로 폴백
-  - 빈 query로 Tavily 호출하지 않도록 validation 추가
-- **파일**: `search/__init__.py`
+#### ~~10. 웹 검색(자료 수집) 실패~~ (해결됨)
+- 프롬프트 few-shot 예시 추가, 빈 query 폴백, WebSearch 빈 query 차단
 
 ---
 
@@ -84,19 +78,13 @@
 
 ---
 
-### 테스트 결과 요약
+### 미통과 항목
 
-| 항목 | 통과 |
+| 항목 | 관련 TODO |
 |---|---|
-| 첫 토픽 자동 생성 | O |
-| 토픽 전환 "다음 안건" | O |
-| 토픽 전환 "그건 그렇고" | O |
-| 토픽 전환 "넘어가서" | X (LLM 판단 실패) |
-| consensus 정상 감지 | O |
-| consensus 오탐 방지 | O |
-| info_needed 감지 | O |
-| loop 감지 + 불용어 필터링 | O |
-| 시간 초과 감지 | O |
-| 결론 없이 전환 감지 | O |
-| 쟁점 구조화 | O (품질 보통) |
-| end_time 설정 | O |
+| 토픽 전환 "넘어가서" 누락 | #2 |
+| 입장 과다 분해 (15개) | #3 |
+| no_decision 알림 반복 | #4 |
+| 쟁점 구조화 속도 (60~120초/발화) | #1 |
+| 웹 검색 자료 수집 0건 | #10 |
+| LLM 요약 품질 (토픽명 과장, 입장 추상적) | #6 |
