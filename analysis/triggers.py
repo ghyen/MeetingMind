@@ -1,18 +1,20 @@
 """개입 트리거 감지 & 액션 생성.
 
 트리거 종류:
-  - 논의 순환: 같은 키워드/논점 3회+ 반복
-  - 결론 없이 전환: 토픽 전환 + decision=null
-  - 합의 신호: "그렇게 하죠", "동의합니다" 등
-  - 정보 부족: "확인해봐야", "자료가 있나" 등
-
-개입 방식: 사이드바 카드 (info / warning / action_required)
+  - 논의 순환: 같은 키워드 3회+ 반복
+  - 긴 침묵: 5초+ 무음
+  - 시간 초과: 안건별 10분+
+  - 합의 신호: "그렇게 하죠" 등
+  - 정보 부족: "확인해봐야" 등
+  - 결론 없이 전환
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING
 
+from config import settings
 from models import Utterance, Intervention, AlertLevel
 
 if TYPE_CHECKING:
@@ -20,6 +22,16 @@ if TYPE_CHECKING:
 
 CONSENSUS_KEYWORDS = ["그렇게 하죠", "동의합니다", "좋습니다", "그렇게 합시다"]
 INFO_NEEDED_KEYWORDS = ["확인해봐야", "자료가 있나", "데이터를 봐야", "찾아봐야"]
+# loop 감지에서 제외할 불용어 (일반적으로 자주 쓰이는 단어)
+_STOPWORDS = {
+    "정도", "것", "수", "거", "때", "때문에", "이번", "다음", "하는",
+    "있는", "없는", "하고", "해서", "그래서", "근데", "그리고", "하면",
+    "되는", "같은", "좀", "더", "안", "못", "잘", "또", "이",
+    "그", "저", "네", "아", "예", "뭐", "어떻게", "얼마나",
+    "합니다", "됩니다", "입니다", "있습니다", "없습니다", "했습니다",
+    "하겠습니다", "같습니다", "봅니다", "있어요", "없어요", "해요",
+    "건데", "건데요", "거든요", "거예요",
+}
 
 
 class TriggerDetector:
@@ -34,12 +46,24 @@ class TriggerDetector:
             results.append(inv)
         if inv := self._check_no_decision(state):
             results.append(inv)
+        if inv := self._check_loop(state):
+            results.append(inv)
+        if inv := self._check_silence(state):
+            results.append(inv)
+        if inv := self._check_time_over(utterance, state):
+            results.append(inv)
 
         return results
+
+    # --- 키워드 기반 트리거 ---
 
     def _check_consensus(self, utterance: Utterance) -> Intervention | None:
         for kw in CONSENSUS_KEYWORDS:
             if kw in utterance.text:
+                # 키워드가 문장의 주요 내용인 경우만 합의로 판단
+                remainder = utterance.text.replace(kw, "", 1).strip().strip(".,!?~")
+                if len(remainder) > 10:
+                    continue
                 return Intervention(
                     trigger_type="consensus",
                     message=f"결정사항으로 기록합니다: {utterance.text}",
@@ -71,6 +95,63 @@ class TriggerDetector:
             )
         return None
 
+    # --- 패턴 기반 트리거 ---
+
+    def _check_loop(self, state: MeetingState) -> Intervention | None:
+        """논의 순환 감지: 최근 발화에서 같은 키워드 반복."""
+        if not state.topics:
+            return None
+        current = state.topics[-1]
+        recent = current.utterances[-10:]
+        if len(recent) < settings.loop_detection_count:
+            return None
+
+        words: list[str] = []
+        for u in recent:
+            words.extend(w for w in u.text.split() if len(w) >= 2 and w not in _STOPWORDS)
+        counter = Counter(words)
+        repeated = [
+            w for w, c in counter.most_common(5)
+            if c >= settings.loop_detection_count
+        ]
+
+        if repeated:
+            return Intervention(
+                trigger_type="loop",
+                message=f"논의가 반복되고 있습니다 (반복 키워드: {', '.join(repeated[:3])})",
+                level=AlertLevel.WARNING,
+                topic_id=current.id,
+            )
+        return None
+
+    def _check_silence(self, state: MeetingState) -> Intervention | None:
+        """긴 침묵 감지."""
+        if state.current_silence_ms >= settings.long_silence_sec * 1000:
+            return Intervention(
+                trigger_type="silence",
+                message="긴 침묵이 감지되었습니다. 다음 안건으로 넘어갈까요?",
+                level=AlertLevel.INFO,
+            )
+        return None
+
+    def _check_time_over(
+        self, utterance: Utterance, state: MeetingState
+    ) -> Intervention | None:
+        """안건별 시간 초과 감지."""
+        if not state.topics:
+            return None
+        current = state.topics[-1]
+        elapsed = _time_diff_minutes(current.start_time, utterance.time)
+        if elapsed > settings.time_over_alert_min:
+            over = elapsed - settings.time_over_alert_min
+            return Intervention(
+                trigger_type="time_over",
+                message=f"현재 안건이 예정 시간을 {over:.0f}분 초과했습니다",
+                level=AlertLevel.WARNING,
+                topic_id=current.id,
+            )
+        return None
+
     @staticmethod
     def format_card(intervention: Intervention) -> dict:
         """Intervention → 프론트엔드 카드 데이터."""
@@ -86,3 +167,12 @@ class TriggerDetector:
             "topic_id": intervention.topic_id,
             "style": styles[intervention.level],
         }
+
+
+def _time_diff_minutes(start: str, end: str) -> float:
+    """'HH:MM:SS' 시간 차이를 분 단위로 반환."""
+    def _to_sec(t: str) -> int:
+        parts = t.split(":")
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    diff = _to_sec(end) - _to_sec(start)
+    return max(diff, 0) / 60

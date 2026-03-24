@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MeetingMind</title>
+<style>
+:root {
+  --bg: #0a0b0f;
+  --surface: #12141a;
+  --surface2: #1a1d26;
+  --border: #252830;
+  --text: #e2e4e9;
+  --text2: #8b8fa3;
+  --text3: #555870;
+  --accent: #6c8aff;
+  --accent2: #4f6df0;
+  --green: #34d399;
+  --orange: #fb923c;
+  --red: #f87171;
+  --radius: 10px;
+  --speaker-a: #6c8aff;
+  --speaker-b: #34d399;
+  --speaker-c: #fb923c;
+  --speaker-d: #c084fc;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+/* ── Header ── */
+.header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.header-left { display: flex; align-items: center; gap: 16px; }
+.logo { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+.logo span { color: var(--accent); }
+.meeting-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); }
+.meeting-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); }
+.meeting-status .dot.active { background: var(--green); animation: blink 2s infinite; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.meeting-timer { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.model-select { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 12px; cursor: pointer; max-width: 180px; }
+.model-select:focus { border-color: var(--accent); outline: none; }
+.model-label { font-size: 11px; color: var(--text3); margin-right: 2px; }
+
+/* ── Buttons ── */
+.btn { border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+.btn-primary { background: var(--accent2); color: #fff; }
+.btn-primary:hover { background: var(--accent); }
+.btn-danger { background: rgba(248,113,113,0.15); color: var(--red); }
+.btn-danger:hover { background: rgba(248,113,113,0.25); }
+.btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+.btn-ghost:hover { background: var(--surface2); color: var(--text); }
+.btn-icon { width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--text2); cursor: pointer; font-size: 15px; transition: all 0.15s; }
+.btn-icon:hover { background: var(--border); color: var(--text); }
+
+/* ── Mic Button ── */
+.mic-btn { width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; }
+.mic-btn.idle { background: var(--accent2); color: #fff; }
+.mic-btn.idle:hover { background: var(--accent); transform: scale(1.05); }
+.mic-btn.recording { background: var(--red); color: #fff; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.3); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
+
+/* ── Main Layout ── */
+.main { display: grid; grid-template-columns: 340px 1fr 300px; flex: 1; overflow: hidden; }
+
+/* ── Panel Base ── */
+.panel { display: flex; flex-direction: column; border-right: 1px solid var(--border); overflow: hidden; }
+.panel:last-child { border-right: none; }
+.panel-header { padding: 14px 16px 10px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.panel-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); }
+.panel-badge { font-size: 11px; color: var(--text3); background: var(--surface2); padding: 2px 8px; border-radius: 10px; }
+.panel-body { flex: 1; overflow-y: auto; padding: 0 16px 16px; }
+.panel-body::-webkit-scrollbar { width: 4px; }
+.panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Left: Transcript ── */
+.transcript-item { display: flex; gap: 10px; padding: 8px 0; position: relative; }
+.transcript-item + .transcript-item { border-top: 1px solid var(--border); }
+.transcript-time { font-size: 11px; color: var(--text3); min-width: 44px; padding-top: 2px; font-variant-numeric: tabular-nums; }
+.transcript-content { flex: 1; min-width: 0; }
+.transcript-speaker { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.transcript-text { font-size: 13px; line-height: 1.5; color: var(--text); word-break: break-word; }
+.transcript-item.partial .transcript-text { color: var(--text2); font-style: italic; }
+.speaker-a { color: var(--speaker-a); }
+.speaker-b { color: var(--speaker-b); }
+.speaker-c { color: var(--speaker-c); }
+.speaker-d { color: var(--speaker-d); }
+.speaker-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+
+/* Live transcript bar */
+.live-bar { padding: 10px 16px; background: var(--surface2); border-top: 1px solid var(--border); font-size: 13px; color: var(--text2); flex-shrink: 0; min-height: 40px; display: flex; align-items: center; gap: 8px; }
+.live-bar .mic-level { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; max-width: 60px; }
+.live-bar .mic-level-bar { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.1s; width: 0%; }
+
+/* ── Center: Topics + Issues ── */
+.topic-section { margin-bottom: 16px; }
+.topic-tab-bar { display: flex; gap: 4px; padding: 0 16px; overflow-x: auto; flex-shrink: 0; padding-bottom: 8px; }
+.topic-tab { padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; white-space: nowrap; background: var(--surface2); color: var(--text2); border: 1px solid transparent; transition: all 0.15s; }
+.topic-tab:hover { color: var(--text); }
+.topic-tab.active { background: var(--accent2); color: #fff; border-color: var(--accent); }
+.topic-meta { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+.issue-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+.issue-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.position-item { padding: 8px 10px; border-left: 3px solid var(--accent); margin-bottom: 6px; border-radius: 0 6px 6px 0; background: rgba(108,138,255,0.05); }
+.position-speaker { font-size: 12px; font-weight: 600; }
+.position-stance { font-size: 13px; margin-top: 2px; }
+.position-args { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.issue-consensus { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 8px 10px; background: rgba(52,211,153,0.08); border-radius: 6px; font-size: 13px; color: var(--green); }
+.issue-decision { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 8px 10px; background: rgba(251,146,60,0.08); border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--orange); }
+.issue-open { font-size: 12px; color: var(--text3); margin-top: 8px; }
+.empty-state { text-align: center; padding: 40px 20px; color: var(--text3); font-size: 13px; }
+.empty-state .icon { font-size: 28px; margin-bottom: 8px; opacity: 0.5; }
+
+/* ── Right: Alerts + References ── */
+.alert-item { padding: 10px 12px; border-radius: 8px; margin-bottom: 6px; font-size: 13px; line-height: 1.4; }
+.alert-item .alert-type { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+.alert-item.info { background: rgba(108,138,255,0.1); border-left: 3px solid var(--accent); }
+.alert-item.info .alert-type { color: var(--accent); }
+.alert-item.warning { background: rgba(251,146,60,0.1); border-left: 3px solid var(--orange); }
+.alert-item.warning .alert-type { color: var(--orange); }
+.alert-item.action_required { background: rgba(248,113,113,0.1); border-left: 3px solid var(--red); }
+.alert-item.action_required .alert-type { color: var(--red); }
+
+.ref-item { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 6px; }
+.ref-title { font-size: 13px; font-weight: 500; }
+.ref-snippet { font-size: 12px; color: var(--text2); margin-top: 3px; line-height: 1.4; }
+.ref-meta { font-size: 11px; color: var(--text3); margin-top: 4px; display: flex; gap: 8px; }
+.ref-meta a { color: var(--accent); text-decoration: none; }
+
+.section-divider { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text3); padding: 12px 0 6px; margin-top: 8px; border-top: 1px solid var(--border); }
+
+/* ── Dev Panel (collapsible) ── */
+.dev-toggle { position: fixed; bottom: 16px; right: 16px; z-index: 100; }
+.dev-panel { position: fixed; bottom: 60px; right: 16px; width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; z-index: 100; display: none; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+.dev-panel.open { display: block; }
+.dev-panel h3 { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 10px; }
+.dev-panel .presets { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.dev-panel .preset-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; color: var(--text2); padding: 3px 10px; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+.dev-panel .preset-btn:hover { background: var(--border); color: var(--text); }
+.dev-panel .input-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.dev-panel input, .dev-panel select, .dev-panel textarea { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 13px; }
+.dev-panel input:focus, .dev-panel textarea:focus { border-color: var(--accent); outline: none; }
+.dev-panel textarea { width: 100%; resize: vertical; min-height: 50px; font-family: inherit; }
+.dev-panel select { cursor: pointer; }
+.dev-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+/* Upload */
+.upload-area { border: 1px dashed var(--border); border-radius: 8px; padding: 12px; text-align: center; color: var(--text3); cursor: pointer; font-size: 12px; transition: all 0.15s; margin-top: 8px; }
+.upload-area:hover { border-color: var(--accent); color: var(--text2); }
+.upload-area input { display: none; }
+
+.dev-status { font-size: 11px; color: var(--text3); margin-top: 6px; }
+.dev-status.loading { color: var(--orange); }
+.dev-status.error { color: var(--red); }
+
+/* ── Toast ── */
+.toast-container { position: fixed; top: 60px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast { padding: 10px 16px; border-radius: 8px; font-size: 13px; color: #fff; pointer-events: auto; animation: slideIn 0.3s ease, fadeOut 0.5s ease 4s forwards; max-width: 340px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+.toast.info { background: rgba(108,138,255,0.9); }
+.toast.warning { background: rgba(251,146,60,0.9); }
+.toast.action_required { background: rgba(248,113,113,0.9); }
+.toast .toast-type { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; margin-bottom: 2px; }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes fadeOut { to { opacity: 0; transform: translateY(-10px); } }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo">Meeting<span>Mind</span></div>
+    <div class="meeting-status">
+      <div id="status-dot" class="dot"></div>
+      <span id="meeting-label">Ready</span>
+      <span id="meeting-timer" class="meeting-timer"></span>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span class="model-label">LLM</span>
+    <select id="model-select" class="model-select" onchange="changeModel(this)"></select>
+    <button id="mic-btn" class="mic-btn idle" onclick="toggleMic()" title="Toggle microphone">&#x1F3A4;</button>
+    <button class="btn btn-primary" onclick="startMeeting()">Start</button>
+    <button class="btn btn-danger" onclick="endMeeting()">End</button>
+    <button class="btn btn-ghost" onclick="resetMeeting()">Reset</button>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Main 3-column layout -->
+<div class="main">
+
+  <!-- Left: Transcript -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Transcript</span>
+      <span id="utt-count" class="panel-badge">0</span>
+    </div>
+    <div id="utterances" class="panel-body">
+      <div class="empty-state"><div class="icon">&#x1F399;</div>Waiting for input...</div>
+    </div>
+    <div id="live-bar" class="live-bar" style="display:none;">
+      <div class="mic-level"><div id="mic-level-bar" class="mic-level-bar"></div></div>
+      <span id="live-transcript">Listening...</span>
+    </div>
+  </div>
+
+  <!-- Center: Topics & Issues -->
+  <div class="panel" style="border-right: 1px solid var(--border);">
+    <div class="panel-header">
+      <span class="panel-title">Topics & Issues</span>
+      <span id="topic-count" class="panel-badge">0</span>
+    </div>
+    <div id="topic-tabs" class="topic-tab-bar"></div>
+    <div id="center-body" class="panel-body">
+      <div class="empty-state"><div class="icon">&#x1F4CB;</div>Topics will appear as the conversation progresses</div>
+    </div>
+  </div>
+
+  <!-- Right: Alerts & References -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Alerts</span>
+      <span id="inv-count" class="panel-badge">0</span>
+    </div>
+    <div id="right-body" class="panel-body">
+      <div id="interventions"></div>
+      <div id="ref-section" style="display:none;">
+        <div class="section-divider">References</div>
+        <div id="references"></div>
+      </div>
+      <div id="alerts-empty" class="empty-state"><div class="icon">&#x1F514;</div>No alerts yet</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Dev Panel Toggle -->
+<div class="dev-toggle">
+  <button class="btn-icon" onclick="toggleDev()" title="Developer tools">&#x2699;</button>
+</div>
+
+<!-- Dev Panel -->
+<div id="dev-panel" class="dev-panel">
+  <h3>Developer Tools</h3>
+  <div class="presets">
+    <button class="preset-btn" onclick="preset('A','안녕하세요, 오늘 회의 시작하겠습니다')">회의 시작</button>
+    <button class="preset-btn" onclick="preset('B','다음 안건으로 넘어가겠습니다')">안건 전환</button>
+    <button class="preset-btn" onclick="preset('A','그렇게 하죠, 동의합니다')">합의</button>
+    <button class="preset-btn" onclick="preset('B','관련 자료가 있나 확인해봐야 할 것 같습니다')">자료 요청</button>
+    <button class="preset-btn" onclick="preset('B','그건 그렇고 마케팅 예산 건은 어떻게 할까요?')">토픽 전환</button>
+  </div>
+  <div class="input-row">
+    <select id="speaker" style="width: 60px;">
+      <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
+    </select>
+    <input id="time-input" type="text" placeholder="Time (auto)" style="width: 80px;">
+  </div>
+  <textarea id="text-input" placeholder="Enter utterance text..." rows="2"></textarea>
+  <div class="dev-actions">
+    <button class="btn btn-primary" onclick="sendUtterance()">Send</button>
+    <button class="btn btn-ghost" onclick="refreshState()">Refresh</button>
+  </div>
+  <div class="upload-area" onclick="document.getElementById('audio-file').click()">
+    <input type="file" id="audio-file" accept="audio/*" onchange="uploadAudio(this)">
+    Upload audio file
+  </div>
+  <textarea id="batch-input" placeholder="Batch: speaker|text (one per line)" rows="2" style="margin-top:6px;"></textarea>
+  <button class="btn btn-ghost" onclick="batchSimulate()" style="margin-top:4px;">Batch Send</button>
+  <div id="dev-status" class="dev-status"></div>
+</div>
+
+<script>
+const API = '';
+const SPEAKER_COLORS = { A: 'speaker-a', B: 'speaker-b', C: 'speaker-c', D: 'speaker-d' };
+const SPEAKER_CSS = { A: 'var(--speaker-a)', B: 'var(--speaker-b)', C: 'var(--speaker-c)', D: 'var(--speaker-d)' };
+
+// ── State ──
+let uttCount = 0;
+let allInterventions = [];
+let allTopics = [];
+let allIssues = {};
+let selectedTopicId = null;
+let meetingActive = false;
+let meetingStartTime = null;
+let timerInterval = null;
+
+// ── Meeting lifecycle ──
+async function startMeeting() {
+  try {
+    const res = await fetch(API + '/api/meeting/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+    const data = await res.json();
+    meetingActive = true;
+    meetingStartTime = Date.now();
+    document.getElementById('status-dot').className = 'dot active';
+    document.getElementById('meeting-label').textContent = 'Meeting #' + data.meeting_id;
+    timerInterval = setInterval(updateTimer, 1000);
+  } catch(e) { setDevStatus('Error: ' + e.message, 'error'); }
+}
+
+async function endMeeting() {
+  try {
+    await fetch(API + '/api/meeting/end', { method: 'POST' });
+    meetingActive = false;
+    document.getElementById('status-dot').className = 'dot';
+    document.getElementById('meeting-label').textContent = 'Ended';
+    clearInterval(timerInterval);
+  } catch(e) {}
+}
+
+async function resetMeeting() {
+  await fetch(API + '/api/meeting/reset', { method: 'POST' });
+  meetingActive = false;
+  document.getElementById('status-dot').className = 'dot';
+  document.getElementById('meeting-label').textContent = 'Ready';
+  document.getElementById('meeting-timer').textContent = '';
+  clearInterval(timerInterval);
+  uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
+  refreshState();
+}
+
+function updateTimer() {
+  if (!meetingStartTime) return;
+  const sec = Math.floor((Date.now() - meetingStartTime) / 1000);
+  const m = Math.floor(sec / 60); const s = sec % 60;
+  document.getElementById('meeting-timer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+}
+
+// ── Dev panel ──
+function toggleDev() { document.getElementById('dev-panel').classList.toggle('open'); }
+function preset(speaker, text) {
+  document.getElementById('speaker').value = speaker;
+  document.getElementById('text-input').value = text;
+}
+function setDevStatus(msg, type) {
+  const el = document.getElementById('dev-status');
+  el.textContent = msg;
+  el.className = 'dev-status' + (type ? ' ' + type : '');
+}
+
+// ── Simulate ──
+async function sendUtterance() {
+  const text = document.getElementById('text-input').value.trim();
+  if (!text) return;
+  const speaker = document.getElementById('speaker').value;
+  const time = document.getElementById('time-input').value.trim() || undefined;
+  setDevStatus('Sending...', 'loading');
+  try {
+    const res = await fetch(API + '/api/meeting/simulate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({speaker, text, time}),
+    });
+    const data = await res.json();
+    setDevStatus('OK');
+    document.getElementById('text-input').value = '';
+    if (!meetingActive) {
+      meetingActive = true;
+      document.getElementById('status-dot').className = 'dot active';
+      document.getElementById('meeting-label').textContent = 'Meeting';
+      meetingStartTime = meetingStartTime || Date.now();
+      if (!timerInterval) timerInterval = setInterval(updateTimer, 1000);
+    }
+    renderSimResult(data);
+  } catch(e) { setDevStatus('Error: ' + e.message, 'error'); }
+}
+
+document.getElementById('text-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendUtterance(); }
+});
+
+// ── Batch ──
+async function batchSimulate() {
+  const lines = document.getElementById('batch-input').value.trim().split('\n').filter(Boolean);
+  setDevStatus(`Sending ${lines.length}...`, 'loading');
+  for (const line of lines) {
+    const parts = line.split('|');
+    const speaker = parts.length > 1 ? parts[0].trim() : 'A';
+    const text = parts.length > 1 ? parts.slice(1).join('|').trim() : line.trim();
+    try {
+      const res = await fetch(API + '/api/meeting/simulate', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({speaker, text}),
+      });
+      renderSimResult(await res.json());
+    } catch(e) { setDevStatus('Error: ' + text.substring(0,30), 'error'); return; }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  setDevStatus(`Done (${lines.length})`);
+  document.getElementById('batch-input').value = '';
+}
+
+// ── Audio Upload ──
+async function uploadAudio(input) {
+  if (!input.files.length) return;
+  setDevStatus('Uploading...', 'loading');
+  const form = new FormData();
+  form.append('file', input.files[0]);
+  try {
+    const res = await fetch(API + '/api/meeting/upload', {method:'POST', body:form});
+    const data = await res.json();
+    if (data.error) setDevStatus(data.error, 'error');
+    else { setDevStatus(`Processed: ${data.utterances?.length||0} utterances`); refreshState(); }
+  } catch(e) { setDevStatus('Error: ' + e.message, 'error'); }
+  input.value = '';
+}
+
+// ── Microphone ──
+let micStream = null, audioCtx = null, micWs = null, micStartTime = null, micTimer = null, scriptNode = null;
+
+function toggleMic() { micStream ? stopMic() : startMic(); }
+
+async function startMic() {
+  const btn = document.getElementById('mic-btn');
+  const liveBar = document.getElementById('live-bar');
+  const liveEl = document.getElementById('live-transcript');
+
+  try {
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    micWs = new WebSocket(`${wsProto}//${location.host}/ws/audio`);
+    micWs.binaryType = 'arraybuffer';
+    await new Promise((resolve, reject) => {
+      micWs.onopen = resolve;
+      micWs.onerror = () => reject(new Error('WebSocket failed'));
+    });
+
+    micWs.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.error) { stopMic(); return; }
+      if (data.type === 'ready') { liveEl.textContent = 'Speak now...'; return; }
+      if (data.utterance) {
+        if (data.utterance.is_final) {
+          liveEl.textContent = 'Listening...';
+          appendUtterance(data.utterance);
+        } else {
+          liveEl.textContent = data.utterance.text;
+        }
+      }
+      if (data.topics) renderTopics(data.topics);
+      if (data.interventions) renderNewInterventions(data.interventions);
+    };
+    micWs.onclose = () => { if (micStream) stopMic(); };
+
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Mic unavailable - use localhost');
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+    });
+
+    audioCtx = new AudioContext();
+    const source = audioCtx.createMediaStreamSource(micStream);
+    const ratio = audioCtx.sampleRate / 16000;
+    const chunkSamples = 8000;
+    let buffer = new Float32Array(0);
+
+    scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
+    scriptNode.onaudioprocess = (e) => {
+      const input = e.inputBuffer.getChannelData(0);
+      const ds = downsample(input, ratio);
+      const nb = new Float32Array(buffer.length + ds.length);
+      nb.set(buffer); nb.set(ds, buffer.length); buffer = nb;
+      let sum = 0;
+      for (let i = 0; i < input.length; i++) sum += input[i]*input[i];
+      document.getElementById('mic-level-bar').style.width = Math.min(100, Math.sqrt(sum/input.length)*500) + '%';
+      while (buffer.length >= chunkSamples) {
+        const chunk = buffer.slice(0, chunkSamples); buffer = buffer.slice(chunkSamples);
+        if (micWs?.readyState === WebSocket.OPEN) {
+          const bytes = new ArrayBuffer(chunk.length*4);
+          new Float32Array(bytes).set(chunk);
+          micWs.send(bytes);
+        }
+      }
+    };
+    source.connect(scriptNode);
+    scriptNode.connect(audioCtx.destination);
+
+    btn.className = 'mic-btn recording';
+    liveBar.style.display = 'flex';
+    liveEl.textContent = 'Listening...';
+    if (!meetingActive) startMeeting();
+  } catch(e) {
+    setDevStatus('Mic: ' + e.message, 'error');
+    stopMic();
+  }
+}
+
+function stopMic() {
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (scriptNode) { scriptNode.disconnect(); scriptNode = null; }
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  if (micWs) { micWs.close(); micWs = null; }
+  document.getElementById('mic-btn').className = 'mic-btn idle';
+  document.getElementById('live-bar').style.display = 'none';
+  document.getElementById('mic-level-bar').style.width = '0%';
+  refreshState();
+}
+
+function downsample(input, ratio) {
+  if (ratio <= 1) return input;
+  const len = Math.floor(input.length / ratio);
+  const out = new Float32Array(len);
+  for (let i = 0; i < len; i++) out[i] = input[Math.floor(i * ratio)];
+  return out;
+}
+
+// ── Refresh State ──
+async function refreshState() {
+  try {
+    const res = await fetch(API + '/api/meeting/state');
+    const data = await res.json();
+    renderFullState(data);
+  } catch(e) {}
+}
+
+// ── Rendering ──
+function renderSimResult(data) {
+  appendUtterance(data.utterance);
+  renderTopics(data.topics || []);
+  renderIssues(data.issues || {});
+  renderNewInterventions(data.interventions || []);
+  renderReferences(data.references || []);
+}
+
+function renderFullState(data) {
+  const el = document.getElementById('utterances');
+  uttCount = (data.utterances || []).length;
+  document.getElementById('utt-count').textContent = uttCount;
+  if (!uttCount) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">&#x1F399;</div>Waiting for input...</div>';
+  } else {
+    el.innerHTML = (data.utterances || []).map(u => makeUtteranceHtml(u)).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+  allInterventions = data.interventions || [];
+  renderTopics(data.topics || []);
+  renderIssues(data.issues || {});
+  renderAllInterventions();
+  renderReferences(data.references || []);
+}
+
+function appendUtterance(u) {
+  if (!u) return;
+  const el = document.getElementById('utterances');
+  if (uttCount === 0) el.innerHTML = '';
+  uttCount++;
+  document.getElementById('utt-count').textContent = uttCount;
+  el.insertAdjacentHTML('beforeend', makeUtteranceHtml(u));
+  el.scrollTop = el.scrollHeight;
+}
+
+function makeUtteranceHtml(u) {
+  const cls = SPEAKER_COLORS[u.speaker] || 'speaker-a';
+  const css = SPEAKER_CSS[u.speaker] || 'var(--speaker-a)';
+  return `<div class="transcript-item${u.is_final ? '' : ' partial'}">
+    <div class="transcript-time">${u.time || ''}</div>
+    <div class="transcript-content">
+      <div class="transcript-speaker ${cls}"><span class="speaker-dot" style="background:${css}"></span>${esc(u.speaker)}</div>
+      <div class="transcript-text">${esc(u.text)}</div>
+    </div>
+  </div>`;
+}
+
+function renderTopics(topics) {
+  allTopics = topics;
+  document.getElementById('topic-count').textContent = topics.length;
+  const tabBar = document.getElementById('topic-tabs');
+  if (!topics.length) { tabBar.innerHTML = ''; renderCenterContent(); return; }
+  if (!selectedTopicId || !topics.find(t => t.id === selectedTopicId)) {
+    selectedTopicId = topics[topics.length - 1].id;
+  }
+  tabBar.innerHTML = topics.map(t =>
+    `<div class="topic-tab${t.id === selectedTopicId ? ' active' : ''}" onclick="selectTopic(${t.id})">
+      #${t.id} ${esc(t.title)}
+    </div>`
+  ).join('');
+  renderCenterContent();
+}
+
+function selectTopic(id) {
+  selectedTopicId = id;
+  renderTopics(allTopics);
+}
+
+function renderIssues(issues) {
+  allIssues = issues;
+  renderCenterContent();
+}
+
+function renderCenterContent() {
+  const el = document.getElementById('center-body');
+  if (!allTopics.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">&#x1F4CB;</div>Topics will appear as the conversation progresses</div>';
+    return;
+  }
+  const topic = allTopics.find(t => t.id === selectedTopicId);
+  if (!topic) return;
+
+  let html = `<div class="topic-section">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;">${topic.start_time} ~ ${topic.end_time || 'ongoing'} &middot; ${(topic.utterances||[]).length} utterances</div>
+  </div>`;
+
+  const ig = allIssues[String(selectedTopicId)];
+  if (ig) {
+    const positions = (ig.positions || []).map(p => {
+      const cls = SPEAKER_COLORS[p.speaker] || '';
+      return `<div class="position-item">
+        <div class="position-speaker ${cls}">${esc(p.speaker)}</div>
+        <div class="position-stance">${esc(p.stance)}</div>
+        ${(p.arguments||[]).length ? `<div class="position-args">${p.arguments.map(a => '&bull; ' + esc(a)).join('<br>')}</div>` : ''}
+      </div>`;
+    }).join('');
+    const consensus = ig.consensus ? `<div class="issue-consensus">&#x2705; ${esc(ig.consensus)}</div>` : '';
+    const decision = ig.decision ? `<div class="issue-decision">&#x1F4CC; ${esc(ig.decision)}</div>` : '';
+    const openQs = (ig.open_questions||[]).length ? `<div class="issue-open">Open: ${ig.open_questions.map(esc).join(', ')}</div>` : '';
+    html += `<div class="issue-card">
+      <div class="issue-title">${esc(ig.topic)}</div>
+      ${positions}${consensus}${decision}${openQs}
+    </div>`;
+  } else {
+    html += '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Issue analysis pending...</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function renderNewInterventions(interventions) {
+  for (const inv of interventions) {
+    allInterventions.push(inv);
+    showToast(inv);
+  }
+  renderAllInterventions();
+}
+
+function renderAllInterventions() {
+  const el = document.getElementById('interventions');
+  const emptyEl = document.getElementById('alerts-empty');
+  document.getElementById('inv-count').textContent = allInterventions.length;
+  if (!allInterventions.length) { el.innerHTML = ''; emptyEl.style.display = ''; return; }
+  emptyEl.style.display = 'none';
+  el.innerHTML = allInterventions.slice().reverse().map(inv =>
+    `<div class="alert-item ${inv.level}">
+      <div class="alert-type">${inv.trigger_type}${inv.topic_id != null ? ' #' + inv.topic_id : ''}</div>
+      ${esc(inv.message)}
+    </div>`
+  ).join('');
+}
+
+function showToast(inv) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + inv.level;
+  toast.innerHTML = `<div class="toast-type">${inv.trigger_type}</div>${esc(inv.message)}`;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
+}
+
+function renderReferences(references) {
+  const el = document.getElementById('references');
+  const section = document.getElementById('ref-section');
+  if (!references.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  el.innerHTML = references.map(r =>
+    `<div class="ref-item">
+      <div class="ref-title">${esc(r.title)}</div>
+      <div class="ref-snippet">${esc(r.snippet)}</div>
+      <div class="ref-meta">
+        <span>${r.source}</span>
+        <span>score: ${(r.relevance_score||0).toFixed(2)}</span>
+        ${r.url ? `<a href="${escAttr(r.url)}" target="_blank">open</a>` : ''}
+      </div>
+    </div>`
+  ).join('');
+}
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s) { return (s||'').replace(/"/g,'&quot;'); }
+
+// ── Model selection ──
+async function loadModels() {
+  try {
+    const res = await fetch(API + '/api/models');
+    const data = await res.json();
+    const sel = document.getElementById('model-select');
+    sel.innerHTML = '';
+    const active = data.active;
+    for (const [provider, models] of Object.entries(data.providers)) {
+      for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = JSON.stringify({provider, model: m});
+        opt.textContent = provider === 'ollama' ? `${m} (ollama)` : m;
+        if (provider === active.provider && m === active.model) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+  } catch(e) {}
+}
+
+async function changeModel(sel) {
+  const {provider, model} = JSON.parse(sel.value);
+  try {
+    await fetch(API + '/api/model', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({provider, model}),
+    });
+  } catch(e) {}
+}
+
+// Init
+loadModels();
+refreshState();
+</script>
+</body>
+</html>

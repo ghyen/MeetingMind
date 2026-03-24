@@ -6,14 +6,18 @@ class Settings(BaseSettings):
     stt_engine: str = "sensevoice"  # "sensevoice" | "faster_whisper"
     stt_model_path: str = "models/sensevoice-small"
     stt_language: str = "ko"
+    sherpa_model_dir: str = "models/sherpa-onnx-streaming-zipformer-korean-2024-06-16"
 
     # VAD
     vad_threshold: float = 0.5
     vad_min_silence_ms: int = 300
+    vad_model_path: str = "models/silero_vad.onnx"
 
     # 화자 분리
     diarization_enabled: bool = True
     max_speakers: int = 10
+    speaker_embedding_model: str = "models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx"
+    speaker_similarity_threshold: float = 0.5
 
     # 토픽 감지
     topic_silence_threshold_sec: float = 3.0
@@ -26,8 +30,16 @@ class Settings(BaseSettings):
 
     # LLM
     llm_api_key: str = ""
-    llm_model_fast: str = "claude-haiku-4-5-20251001"
-    llm_model_deep: str = "claude-sonnet-4-6-20250514"
+    llm_model_fast: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    llm_model_deep: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    ollama_base_url: str = "http://localhost:11434/v1"
+
+    # DB
+    db_path: str = "data/meetingmind.db"
+
+    # 자료 수집
+    chromadb_path: str = "data/chromadb"
+    tavily_api_key: str = ""
 
     # 서버
     host: str = "0.0.0.0"
