@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     # LLM
     llm_api_key: str = ""
+    llm_provider: str = "openrouter"  # "openrouter" | "ollama"
     llm_model_fast: str = "nvidia/nemotron-3-super-120b-a12b:free"
     llm_model_deep: str = "nvidia/nemotron-3-super-120b-a12b:free"
     ollama_base_url: str = "http://localhost:11434/v1"

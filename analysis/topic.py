@@ -40,12 +40,31 @@ class TopicDetector:
         if not self._is_trigger(utterance):
             return None
 
-        new_topic = await self._llm_judge(utterance)
+        # 강한 전환 키워드 조합이면 LLM 없이 바로 전환 확정
+        new_topic = self._force_transition(utterance)
+        if new_topic is None:
+            new_topic = await self._llm_judge(utterance)
         if new_topic:
             if self.segments:
                 self.segments[-1].end_time = new_topic.start_time
             self.segments.append(new_topic)
         return new_topic
+
+    # 2개 이상 전환 키워드가 동시 매칭되면 LLM 판단 스킵
+    _STRONG_TRANSITION_KEYWORDS = ["마무리", "정리", "넘어가서", "다음 안건", "다음으로"]
+
+    def _force_transition(self, utterance: Utterance) -> Topic | None:
+        """강한 전환 신호 감지 시 LLM 없이 토픽 전환 확정."""
+        matched = [kw for kw in self._STRONG_TRANSITION_KEYWORDS if kw in utterance.text]
+        if len(matched) >= 2:
+            self._topic_counter += 1
+            # 매칭된 키워드에서 토픽명 유추
+            if any(kw in matched for kw in ("마무리", "정리")):
+                title = "마무리 및 정리"
+            else:
+                title = "다음 안건"
+            return Topic(id=self._topic_counter, title=title, start_time=utterance.time)
+        return None
 
     def _is_trigger(self, utterance: Utterance) -> bool:
         """규칙 기반 1차 필터."""
@@ -65,7 +84,9 @@ class TopicDetector:
             "다음은 회의 중 최근 발화입니다:\n\n"
             f"{context}\n\n"
             "마지막 발화 기준으로 새로운 토픽/안건이 시작되었는지 판단하세요.\n"
-            'JSON: {"changed": true/false, "title": "토픽명"}'
+            "중요: '마무리', '정리', '넘어가서', '다음으로' 등 wrap-up/전환 표현이 있으면 "
+            "현재 토픽의 연장이 아니라 새로운 토픽(마무리/정리 안건)으로 분류하세요.\n"
+            'JSON: {"changed": true/false, "title": "토픽명 (10자 이내)"}'
         )
         data = await ask_json(prompt)
 

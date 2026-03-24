@@ -131,13 +131,20 @@ class Pipeline:
         if self.state.topics:
             self.state.topics[-1].utterances.append(utterance)
 
-        # 쟁점 구조화 / 개입 감지 / 자료 수집 — 병렬 실행
-        await asyncio.gather(
-            self._update_issues(utterance),
-            self._check_triggers(utterance),
-            self._search_references(utterance),
-            return_exceptions=True,
-        )
+        # 쟁점 구조화 / 개입 감지 / 자료 수집
+        # Ollama는 직렬 처리라 병렬 호출 시 순차 대기 → 순차 실행이 더 효율적
+        from analysis.llm import _active_provider
+        if _active_provider == "ollama":
+            await self._check_triggers(utterance)
+            await self._update_issues(utterance)
+            await self._search_references(utterance)
+        else:
+            await asyncio.gather(
+                self._update_issues(utterance),
+                self._check_triggers(utterance),
+                self._search_references(utterance),
+                return_exceptions=True,
+            )
 
         # WebSocket broadcast
         await self._emit("utterance", utterance)

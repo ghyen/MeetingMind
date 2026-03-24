@@ -197,9 +197,9 @@ async def run():
                 for p in positions:
                     print(f"    [{p['speaker']}] {p['stance'][:50]}")
                 if ig.get("consensus"):
-                    print(f"    ✓ 합의: {ig['consensus'][:60]}")
+                    print(f"    ✓ 합의: {str(ig.get('consensus', ''))[:60]}")
                 if ig.get("decision"):
-                    print(f"    ✓ 결정: {ig['decision'][:60]}")
+                    print(f"    ✓ 결정: {str(ig.get('decision', ''))[:60]}")
                 if ig.get("open_questions"):
                     print(f"    ? 미결: {', '.join(ig['open_questions'][:3])}")
 

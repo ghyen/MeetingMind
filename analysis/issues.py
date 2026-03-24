@@ -11,7 +11,14 @@ from config import settings
 from models import Topic, Utterance, IssueGraph, Position
 from analysis.llm import ask_json
 
-_BATCH_SIZE = 3
+_BATCH_SIZE = 5
+_MAX_UTTERANCES_IN_PROMPT = 15
+
+_FEW_SHOT_EXAMPLE = """\
+예시:
+입력: [A] 배포 주기를 2주에서 1주로 줄이자 / [B] 테스트 자동화 없이 주간 배포는 위험하다
+출력: {"topic": "배포 주기 단축", "positions": [{"speaker": "A", "stance": "배포 주기 2주→1주 단축 제안", "arguments": ["빠른 피드백 반영"], "evidence": []}, {"speaker": "B", "stance": "테스트 자동화 선행 필요", "arguments": ["자동화 없이 주간 배포 시 장애 위험"], "evidence": []}], "consensus": null, "open_questions": ["테스트 자동화 일정"], "decision": null}
+"""
 
 
 class IssueStructurer:
@@ -40,19 +47,20 @@ class IssueStructurer:
 
     async def _create_initial(self, topic: Topic) -> IssueGraph:
         """토픽의 발화들로 초기 쟁점 구조 생성 (Pro 모델)."""
-        lines = "\n".join(f"[{u.speaker}] {u.text}" for u in topic.utterances)
+        recent = topic.utterances[-_MAX_UTTERANCES_IN_PROMPT:]
+        lines = "\n".join(f"[{u.speaker}] {u.text}" for u in recent)
         prompt = (
             f"회의 안건: {topic.title}\n\n"
             f"발화:\n{lines}\n\n"
             "위 내용을 분석하여 쟁점을 구조화하세요.\n"
-            "JSON: {\n"
-            '  "topic": "안건명",\n'
-            '  "positions": [{"speaker": "화자", "stance": "입장", '
-            '"arguments": ["근거"], "evidence": ["증거"]}],\n'
-            '  "consensus": "합의사항 또는 null",\n'
-            '  "open_questions": ["미결 질문"],\n'
-            '  "decision": "결정사항 또는 null"\n'
-            "}"
+            "규칙:\n"
+            "- topic은 10자 이내로 핵심만 (예: '배포 주기 단축')\n"
+            "- 같은 화자의 발언은 하나의 입장으로 병합하세요\n"
+            "- positions는 최대 5개 이내로 유지하세요\n"
+            "- stance에 구체적 수치/사실을 포함하세요 (예: '2주→1주 단축 제안')\n"
+            "- consensus, decision은 문자열 또는 null\n\n"
+            f"{_FEW_SHOT_EXAMPLE}\n"
+            "JSON 형식으로 응답:"
         )
         data = await ask_json(prompt)
         return _parse_issue_graph(data)
@@ -68,7 +76,12 @@ class IssueStructurer:
         prompt = (
             f"기존 쟁점 구조:\n{existing_json}\n\n"
             f"새 발화:\n{lines}\n\n"
-            "새 발화를 반영하여 업데이트된 전체 JSON을 반환하세요."
+            "새 발화를 반영하여 업데이트된 전체 JSON을 반환하세요.\n"
+            "규칙:\n"
+            "- 같은 화자의 입장은 기존 항목에 병합하세요 (새 항목으로 추가하지 마세요)\n"
+            "- positions는 최대 5개 이내로 유지하세요\n"
+            "- stance에 구체적 수치/사실을 포함하세요 (예: '2주→1주 단축 제안')\n"
+            "- topic은 10자 이내, consensus/decision은 문자열 또는 null"
         )
         data = await ask_json(prompt)
         return _parse_issue_graph(data)

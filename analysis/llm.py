@@ -23,7 +23,7 @@ _ollama_client = AsyncOpenAI(
 
 # ── 런타임 상태 ─────────────────────────────────────────
 
-_active_provider: str = "openrouter"  # "openrouter" | "ollama"
+_active_provider: str = settings.llm_provider  # "openrouter" | "ollama"
 _active_model: str = settings.llm_model_fast
 
 

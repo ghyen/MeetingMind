@@ -626,6 +626,11 @@ function renderCenterContent() {
 
 function renderNewInterventions(interventions) {
   for (const inv of interventions) {
+    // 같은 타입+토픽의 중복 알림 방지
+    const isDup = allInterventions.some(
+      existing => existing.trigger_type === inv.trigger_type && existing.topic_id != null && existing.topic_id === inv.topic_id
+    );
+    if (isDup) continue;
     allInterventions.push(inv);
     showToast(inv);
   }
