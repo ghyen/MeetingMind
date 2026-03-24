@@ -37,6 +37,9 @@ _STOPWORDS = {
 class TriggerDetector:
     """개입 트리거 감지 + 카드 생성."""
 
+    def __init__(self) -> None:
+        self._emitted_no_decision: set[int] = set()
+
     async def check(self, utterance: Utterance, state: MeetingState) -> list[Intervention]:
         results: list[Intervention] = []
 
@@ -85,8 +88,11 @@ class TriggerDetector:
         if len(state.topics) < 2:
             return None
         prev = state.topics[-2]
+        if prev.id in self._emitted_no_decision:
+            return None
         prev_issue = state.issues.get(prev.id)
         if prev_issue and prev_issue.decision is None:
+            self._emitted_no_decision.add(prev.id)
             return Intervention(
                 trigger_type="no_decision",
                 message=f"이전 안건 '{prev.title}'에 대한 결정이 내려지지 않았습니다",
