@@ -87,8 +87,38 @@ class IssueStructurer:
         return _parse_issue_graph(data)
 
 
+_MAX_POSITIONS = 5
+
+
+def _merge_positions(positions: list[Position]) -> list[Position]:
+    """같은 화자의 position을 병합하고 최대 개수를 제한."""
+    by_speaker: dict[str, Position] = {}
+    for p in positions:
+        if p.speaker in by_speaker:
+            existing = by_speaker[p.speaker]
+            # stance: 기존 것이 짧으면 새 것으로 교체, 아니면 유지
+            if len(p.stance) > len(existing.stance):
+                existing.stance = p.stance
+            # arguments/evidence: 중복 제거하며 합치기
+            for arg in p.arguments:
+                if arg not in existing.arguments:
+                    existing.arguments.append(arg)
+            for ev in p.evidence:
+                if ev not in existing.evidence:
+                    existing.evidence.append(ev)
+        else:
+            by_speaker[p.speaker] = Position(
+                speaker=p.speaker,
+                stance=p.stance,
+                arguments=list(p.arguments),
+                evidence=list(p.evidence),
+            )
+    merged = list(by_speaker.values())
+    return merged[:_MAX_POSITIONS]
+
+
 def _parse_issue_graph(data: dict) -> IssueGraph:
-    positions = [
+    raw_positions = [
         Position(
             speaker=p.get("speaker", ""),
             stance=p.get("stance", ""),
@@ -97,12 +127,15 @@ def _parse_issue_graph(data: dict) -> IssueGraph:
         )
         for p in data.get("positions", [])
     ]
+    positions = _merge_positions(raw_positions)
+    consensus = data.get("consensus")
+    decision = data.get("decision")
     return IssueGraph(
         topic=data.get("topic", ""),
         positions=positions,
-        consensus=data.get("consensus"),
+        consensus=str(consensus) if consensus and not isinstance(consensus, str) else consensus,
         open_questions=data.get("open_questions", []),
-        decision=data.get("decision"),
+        decision=str(decision) if decision and not isinstance(decision, str) else decision,
     )
 
 
