@@ -115,9 +115,9 @@ class SenseVoiceEngine:
             feature_dim=80,
             decoding_method="greedy_search",
             enable_endpoint_detection=True,
-            rule1_min_trailing_silence=2.4,
-            rule2_min_trailing_silence=1.2,
-            rule3_min_utterance_length=20,
+            rule1_min_trailing_silence=1.5,
+            rule2_min_trailing_silence=0.8,
+            rule3_min_utterance_length=10,
         )
         self._stream = self._recognizer.create_stream()
 

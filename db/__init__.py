@@ -160,7 +160,13 @@ async def get_topics(meeting_id: int) -> list[dict]:
         cur = await db.execute(
             "SELECT * FROM topics WHERE meeting_id = ? ORDER BY topic_seq", (meeting_id,)
         )
-        return [dict(r) for r in await cur.fetchall()]
+        rows = []
+        for r in await cur.fetchall():
+            d = dict(r)
+            # UI는 topic.id로 issues를 매칭 → topic_seq를 id로 사용
+            d["id"] = d.get("topic_seq", d.get("id"))
+            rows.append(d)
+        return rows
 
 
 # ── 쟁점 ──────────────────────────────────────────────

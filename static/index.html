@@ -28,19 +28,31 @@
 body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 
 /* ── Header ── */
-.header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.header-left { display: flex; align-items: center; gap: 16px; }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.header-left { display: flex; align-items: center; gap: 12px; }
 .logo { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
 .logo span { color: var(--accent); }
+.header-center { display: flex; align-items: center; gap: 12px; }
 .meeting-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); }
 .meeting-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); }
 .meeting-status .dot.active { background: var(--green); animation: blink 2s infinite; }
+.meeting-status .dot.recording { background: var(--red); animation: blink 1s infinite; }
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 .meeting-timer { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
 .header-actions { display: flex; gap: 8px; align-items: center; }
+.header-select { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 12px; cursor: pointer; }
+.header-select:focus { border-color: var(--accent); outline: none; }
+/* Record button */
+.rec-btn { display: flex; align-items: center; gap: 6px; padding: 8px 18px; border-radius: 20px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.rec-btn.ready { background: var(--accent2); color: #fff; }
+.rec-btn.ready:hover { background: var(--accent); transform: scale(1.02); }
+.rec-btn.recording { background: var(--red); color: #fff; animation: rec-pulse 1.5s infinite; }
+.rec-btn.recording:hover { background: #ef4444; }
+.rec-btn .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.rec-btn.recording .rec-dot { animation: blink 1s infinite; }
+@keyframes rec-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.3); } 50% { box-shadow: 0 0 0 8px rgba(248,113,113,0); } }
 .model-select { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 12px; cursor: pointer; max-width: 180px; }
 .model-select:focus { border-color: var(--accent); outline: none; }
-.model-label { font-size: 11px; color: var(--text3); margin-right: 2px; }
 
 /* ── Buttons ── */
 .btn { border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
@@ -88,9 +100,14 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .speaker-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 
 /* Live transcript bar */
-.live-bar { padding: 10px 16px; background: var(--surface2); border-top: 1px solid var(--border); font-size: 13px; color: var(--text2); flex-shrink: 0; min-height: 40px; display: flex; align-items: center; gap: 8px; }
-.live-bar .mic-level { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; max-width: 60px; }
-.live-bar .mic-level-bar { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.1s; width: 0%; }
+.live-bar { padding: 10px 16px; background: var(--surface2); border-top: 1px solid var(--border); font-size: 13px; color: var(--text2); flex-shrink: 0; min-height: 44px; display: flex; align-items: center; gap: 10px; }
+.live-bar .mic-level { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.live-bar .mic-level-bar { height: 100%; background: var(--green); border-radius: 3px; transition: width 0.1s; width: 0%; }
+.live-bar .paused-label { color: var(--orange); font-size: 12px; font-weight: 600; }
+.silence-indicator { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.silence-bar { width: 40px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; position: relative; }
+.silence-bar::after { content: ''; position: absolute; left: 0; top: 0; height: 100%; width: var(--progress, 0%); background: var(--orange); border-radius: 2px; transition: width 0.15s; }
+.silence-label { font-size: 11px; color: var(--text3); font-variant-numeric: tabular-nums; min-width: 30px; }
 
 /* ── Center: Topics + Issues ── */
 .topic-section { margin-bottom: 16px; }
@@ -171,19 +188,25 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 <div class="header">
   <div class="header-left">
     <div class="logo">Meeting<span>Mind</span></div>
+    <select id="history-select" class="header-select" style="max-width:240px;" onchange="loadMeeting(this.value)">
+      <option value="new">+ New Meeting</option>
+    </select>
+  </div>
+  <div class="header-center">
     <div class="meeting-status">
       <div id="status-dot" class="dot"></div>
       <span id="meeting-label">Ready</span>
       <span id="meeting-timer" class="meeting-timer"></span>
     </div>
+    <button id="rec-btn" class="rec-btn ready" onclick="toggleRecording()">
+      <span class="rec-dot"></span>
+      <span id="rec-label">Start Recording</span>
+    </button>
+    <button id="end-btn" class="btn btn-danger" onclick="endMeeting()" style="display:none;">End</button>
   </div>
   <div class="header-actions">
-    <span class="model-label">LLM</span>
     <select id="model-select" class="model-select" onchange="changeModel(this)"></select>
-    <button id="mic-btn" class="mic-btn idle" onclick="toggleMic()" title="Toggle microphone">&#x1F3A4;</button>
-    <button class="btn btn-primary" onclick="startMeeting()">Start</button>
-    <button class="btn btn-danger" onclick="endMeeting()">End</button>
-    <button class="btn btn-ghost" onclick="resetMeeting()">Reset</button>
+    <button class="btn-icon" onclick="toggleDev()" title="Developer tools">&#x2699;</button>
   </div>
 </div>
 
@@ -203,8 +226,13 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
       <div class="empty-state"><div class="icon">&#x1F399;</div>Waiting for input...</div>
     </div>
     <div id="live-bar" class="live-bar" style="display:none;">
+      <span id="live-icon" style="font-size:14px;">&#x1F3A4;</span>
       <div class="mic-level"><div id="mic-level-bar" class="mic-level-bar"></div></div>
       <span id="live-transcript">Listening...</span>
+      <div id="silence-indicator" class="silence-indicator" style="display:none;">
+        <div id="silence-bar" class="silence-bar"></div>
+        <span id="silence-label" class="silence-label"></span>
+      </div>
     </div>
   </div>
 
@@ -238,10 +266,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 
 </div>
 
-<!-- Dev Panel Toggle -->
-<div class="dev-toggle">
-  <button class="btn-icon" onclick="toggleDev()" title="Developer tools">&#x2699;</button>
-</div>
+<!-- Dev Panel Toggle (in header) -->
 
 <!-- Dev Panel -->
 <div id="dev-panel" class="dev-panel">
@@ -285,8 +310,52 @@ let allTopics = [];
 let allIssues = {};
 let selectedTopicId = null;
 let meetingActive = false;
+let isRecording = false;
 let meetingStartTime = null;
 let timerInterval = null;
+let viewingHistory = false;
+
+// ── Recording (unified mic + meeting start) ──
+async function toggleRecording() {
+  if (isRecording) {
+    // 녹음 중 → 일시정지 (마이크 끔, 회의 유지)
+    stopMic();
+  } else if (meetingActive) {
+    // 일시정지 상태 → 녹음 재개
+    startMic();
+  } else {
+    // 새 회의 시작 + 녹음
+    if (viewingHistory) {
+      viewingHistory = false;
+      uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
+    }
+    await startMeeting();
+    startMic();
+  }
+}
+
+function updateRecordingUI() {
+  const btn = document.getElementById('rec-btn');
+  const label = document.getElementById('rec-label');
+  const endBtn = document.getElementById('end-btn');
+  const dot = document.getElementById('status-dot');
+  if (isRecording) {
+    btn.className = 'rec-btn recording';
+    label.textContent = 'Pause';
+    dot.className = 'dot recording';
+    endBtn.style.display = '';
+  } else if (meetingActive) {
+    btn.className = 'rec-btn ready';
+    label.textContent = 'Resume';
+    dot.className = 'dot active';
+    endBtn.style.display = '';
+  } else {
+    btn.className = 'rec-btn ready';
+    label.textContent = 'Start Recording';
+    dot.className = 'dot';
+    endBtn.style.display = 'none';
+  }
+}
 
 // ── Meeting lifecycle ──
 async function startMeeting() {
@@ -295,30 +364,42 @@ async function startMeeting() {
     const data = await res.json();
     meetingActive = true;
     meetingStartTime = Date.now();
-    document.getElementById('status-dot').className = 'dot active';
     document.getElementById('meeting-label').textContent = 'Meeting #' + data.meeting_id;
     timerInterval = setInterval(updateTimer, 1000);
+    document.getElementById('history-select').value = 'new';
+    updateRecordingUI();
+    loadHistory(); // refresh list
   } catch(e) { setDevStatus('Error: ' + e.message, 'error'); }
 }
 
 async function endMeeting() {
   try {
+    if (isRecording) stopMic();
     await fetch(API + '/api/meeting/end', { method: 'POST' });
     meetingActive = false;
-    document.getElementById('status-dot').className = 'dot';
-    document.getElementById('meeting-label').textContent = 'Ended';
+    isRecording = false;
+    meetingStartTime = null;
     clearInterval(timerInterval);
+    timerInterval = null;
+    document.getElementById('meeting-label').textContent = 'Ended';
+    document.getElementById('meeting-timer').textContent = '';
+    document.getElementById('live-bar').style.display = 'none';
+    updateRecordingUI();
+    loadHistory();
   } catch(e) {}
 }
 
 async function resetMeeting() {
+  if (isRecording) stopMic();
   await fetch(API + '/api/meeting/reset', { method: 'POST' });
   meetingActive = false;
-  document.getElementById('status-dot').className = 'dot';
+  isRecording = false;
   document.getElementById('meeting-label').textContent = 'Ready';
   document.getElementById('meeting-timer').textContent = '';
   clearInterval(timerInterval);
   uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
+  viewingHistory = false;
+  updateRecordingUI();
   refreshState();
 }
 
@@ -407,101 +488,147 @@ async function uploadAudio(input) {
   input.value = '';
 }
 
-// ── Microphone ──
-let micStream = null, audioCtx = null, micWs = null, micStartTime = null, micTimer = null, scriptNode = null;
-
-function toggleMic() { micStream ? stopMic() : startMic(); }
+// ── Microphone (faster-whisper via WebSocket) ──
+let _micStream = null, _micCtx = null, _micWs = null;
+let _micAnalyser = null, _micScriptNode = null, _micRaf = null;
+const SILENCE_THRESHOLD = 0.01;
+const ENDPOINT_SEC = 0.8;
+let _silenceStart = null;
 
 async function startMic() {
-  const btn = document.getElementById('mic-btn');
   const liveBar = document.getElementById('live-bar');
   const liveEl = document.getElementById('live-transcript');
 
   try {
+    // WebSocket 연결
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    micWs = new WebSocket(`${wsProto}//${location.host}/ws/audio`);
-    micWs.binaryType = 'arraybuffer';
+    _micWs = new WebSocket(`${wsProto}//${location.host}/ws/audio`);
+    _micWs.binaryType = 'arraybuffer';
     await new Promise((resolve, reject) => {
-      micWs.onopen = resolve;
-      micWs.onerror = () => reject(new Error('WebSocket failed'));
+      _micWs.onopen = resolve;
+      _micWs.onerror = () => reject(new Error('WebSocket failed'));
     });
 
-    micWs.onmessage = (e) => {
+    _micWs.onmessage = (e) => {
       const data = JSON.parse(e.data);
-      if (data.error) { stopMic(); return; }
-      if (data.type === 'ready') { liveEl.textContent = 'Speak now...'; return; }
-      if (data.utterance) {
-        if (data.utterance.is_final) {
-          liveEl.textContent = 'Listening...';
-          appendUtterance(data.utterance);
-        } else {
-          liveEl.textContent = data.utterance.text;
-        }
+      if (data.error) { console.error('WS error:', data.error); return; }
+      if (data.type === 'ready') { liveEl.textContent = 'Listening...'; return; }
+      if (data.type === 'transcript' && data.utterance) {
+        liveEl.textContent = `[${data.utterance.speaker}] ${data.utterance.text}`;
+        appendUtterance(data.utterance);
+        setTimeout(() => { if (isRecording) liveEl.textContent = 'Listening...'; }, 2000);
       }
-      if (data.topics) renderTopics(data.topics);
-      if (data.interventions) renderNewInterventions(data.interventions);
+      if (data.type === 'analysis') {
+        if (data.topics) renderTopics(data.topics);
+        if (data.interventions) renderNewInterventions(data.interventions);
+      }
     };
-    micWs.onclose = () => { if (micStream) stopMic(); };
+    _micWs.onerror = (e) => console.error('WS error:', e);
+    _micWs.onclose = () => { if (_micStream) stopMic(); };
 
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Mic unavailable - use localhost');
-    micStream = await navigator.mediaDevices.getUserMedia({
+    // 마이크 접근
+    _micStream = await navigator.mediaDevices.getUserMedia({
       audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
     });
 
-    audioCtx = new AudioContext();
-    const source = audioCtx.createMediaStreamSource(micStream);
-    const ratio = audioCtx.sampleRate / 16000;
-    const chunkSamples = 8000;
-    let buffer = new Float32Array(0);
+    _micCtx = new AudioContext();
+    const source = _micCtx.createMediaStreamSource(_micStream);
+    const ratio = _micCtx.sampleRate / 16000;
+    const chunkSamples = 8000; // 0.5초
 
-    scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
-    scriptNode.onaudioprocess = (e) => {
+    // 음량 분석
+    _micAnalyser = _micCtx.createAnalyser();
+    _micAnalyser.fftSize = 512;
+    source.connect(_micAnalyser);
+
+    // 오디오 캡처 + 서버 전송
+    let buffer = new Float32Array(0);
+    _micScriptNode = _micCtx.createScriptProcessor(4096, 1, 1);
+    _micScriptNode.onaudioprocess = (e) => {
       const input = e.inputBuffer.getChannelData(0);
-      const ds = downsample(input, ratio);
+      // 다운샘플링 to 16kHz
+      const len = Math.floor(input.length / ratio);
+      const ds = new Float32Array(len);
+      for (let i = 0; i < len; i++) ds[i] = input[Math.floor(i * ratio)];
       const nb = new Float32Array(buffer.length + ds.length);
       nb.set(buffer); nb.set(ds, buffer.length); buffer = nb;
-      let sum = 0;
-      for (let i = 0; i < input.length; i++) sum += input[i]*input[i];
-      document.getElementById('mic-level-bar').style.width = Math.min(100, Math.sqrt(sum/input.length)*500) + '%';
+
+      // 0.5초 단위로 서버 전송
       while (buffer.length >= chunkSamples) {
-        const chunk = buffer.slice(0, chunkSamples); buffer = buffer.slice(chunkSamples);
-        if (micWs?.readyState === WebSocket.OPEN) {
-          const bytes = new ArrayBuffer(chunk.length*4);
+        const chunk = buffer.slice(0, chunkSamples);
+        buffer = buffer.slice(chunkSamples);
+        if (_micWs?.readyState === WebSocket.OPEN) {
+          const bytes = new ArrayBuffer(chunk.length * 4);
           new Float32Array(bytes).set(chunk);
-          micWs.send(bytes);
+          _micWs.send(bytes);
         }
       }
     };
-    source.connect(scriptNode);
-    scriptNode.connect(audioCtx.destination);
+    source.connect(_micScriptNode);
+    _micScriptNode.connect(_micCtx.destination);
 
-    btn.className = 'mic-btn recording';
+    // 음량 + 침묵 시각화 루프
+    _vizLoop();
+
     liveBar.style.display = 'flex';
-    liveEl.textContent = 'Listening...';
+    liveEl.textContent = 'Connecting...';
+    isRecording = true;
+    updateRecordingUI();
     if (!meetingActive) startMeeting();
   } catch(e) {
+    console.error('startMic failed:', e);
     setDevStatus('Mic: ' + e.message, 'error');
     stopMic();
   }
 }
 
 function stopMic() {
-  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
-  if (scriptNode) { scriptNode.disconnect(); scriptNode = null; }
-  if (audioCtx) { audioCtx.close(); audioCtx = null; }
-  if (micWs) { micWs.close(); micWs = null; }
-  document.getElementById('mic-btn').className = 'mic-btn idle';
-  document.getElementById('live-bar').style.display = 'none';
+  if (_micRaf) { cancelAnimationFrame(_micRaf); _micRaf = null; }
+  if (_micScriptNode) { _micScriptNode.disconnect(); _micScriptNode = null; }
+  if (_micStream) { _micStream.getTracks().forEach(t => t.stop()); _micStream = null; }
+  if (_micCtx) { _micCtx.close(); _micCtx = null; }
+  if (_micWs) { _micWs.close(); _micWs = null; }
+  _micAnalyser = null;
+  _silenceStart = null;
+
   document.getElementById('mic-level-bar').style.width = '0%';
+  document.getElementById('silence-indicator').style.display = 'none';
+  isRecording = false;
+  if (meetingActive) {
+    document.getElementById('live-bar').style.display = 'flex';
+    document.getElementById('live-transcript').innerHTML = '<span class="paused-label">Paused</span>';
+  } else {
+    document.getElementById('live-bar').style.display = 'none';
+  }
+  updateRecordingUI();
   refreshState();
 }
 
-function downsample(input, ratio) {
-  if (ratio <= 1) return input;
-  const len = Math.floor(input.length / ratio);
-  const out = new Float32Array(len);
-  for (let i = 0; i < len; i++) out[i] = input[Math.floor(i * ratio)];
-  return out;
+function _vizLoop() {
+  if (!_micAnalyser) return;
+  const data = new Float32Array(_micAnalyser.fftSize);
+  _micAnalyser.getFloatTimeDomainData(data);
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+  const rms = Math.sqrt(sum / data.length);
+  document.getElementById('mic-level-bar').style.width = Math.min(100, rms * 500) + '%';
+
+  const silInd = document.getElementById('silence-indicator');
+  const silBar = document.getElementById('silence-bar');
+  const silLabel = document.getElementById('silence-label');
+  if (rms < SILENCE_THRESHOLD) {
+    if (!_silenceStart) _silenceStart = Date.now();
+    const elapsed = (Date.now() - _silenceStart) / 1000;
+    const progress = Math.min(100, (elapsed / ENDPOINT_SEC) * 100);
+    const remaining = Math.max(0, ENDPOINT_SEC - elapsed).toFixed(1);
+    silInd.style.display = 'flex';
+    silBar.style.setProperty('--progress', progress + '%');
+    silLabel.textContent = remaining + 's';
+  } else {
+    _silenceStart = null;
+    silInd.style.display = 'none';
+  }
+  _micRaf = requestAnimationFrame(_vizLoop);
 }
 
 // ── Refresh State ──
@@ -610,8 +737,10 @@ function renderCenterContent() {
         ${(p.arguments||[]).length ? `<div class="position-args">${p.arguments.map(a => '&bull; ' + esc(a)).join('<br>')}</div>` : ''}
       </div>`;
     }).join('');
-    const consensus = ig.consensus ? `<div class="issue-consensus">&#x2705; ${esc(ig.consensus)}</div>` : '';
-    const decision = ig.decision ? `<div class="issue-decision">&#x1F4CC; ${esc(ig.decision)}</div>` : '';
+    const cText = typeof ig.consensus === 'string' ? ig.consensus : ig.consensus ? JSON.stringify(ig.consensus) : '';
+    const dText = typeof ig.decision === 'string' ? ig.decision : ig.decision ? JSON.stringify(ig.decision) : '';
+    const consensus = cText ? `<div class="issue-consensus">&#x2705; ${esc(cText)}</div>` : '';
+    const decision = dText ? `<div class="issue-decision">&#x1F4CC; ${esc(dText)}</div>` : '';
     const openQs = (ig.open_questions||[]).length ? `<div class="issue-open">Open: ${ig.open_questions.map(esc).join(', ')}</div>` : '';
     html += `<div class="issue-card">
       <div class="issue-title">${esc(ig.topic)}</div>
@@ -711,8 +840,68 @@ async function changeModel(sel) {
   } catch(e) {}
 }
 
+// ── Meeting History ──
+async function loadHistory() {
+  try {
+    const res = await fetch(API + '/api/meetings');
+    const data = await res.json();
+    const sel = document.getElementById('history-select');
+    const currentVal = sel.value;
+    sel.innerHTML = '<option value="new">+ New Meeting</option>';
+    for (const m of (data.meetings || [])) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      const date = m.started_at ? m.started_at.split('T')[0] : '';
+      const time = m.started_at ? m.started_at.split('T')[1]?.substring(0,5) : '';
+      const status = m.ended_at ? '' : ' (live)';
+      opt.textContent = `#${m.id} ${m.title || 'Untitled'} ${date} ${time}${status}`;
+      sel.appendChild(opt);
+    }
+  } catch(e) {}
+}
+
+async function loadMeeting(id) {
+  if (id === 'new' || !id) {
+    // 새 회의 모드
+    viewingHistory = false;
+    meetingActive = false;
+    isRecording = false;
+    document.getElementById('meeting-label').textContent = 'Ready';
+    document.getElementById('meeting-timer').textContent = '';
+    clearInterval(timerInterval);
+    uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
+    updateRecordingUI();
+    refreshState();
+    return;
+  }
+  try {
+    const res = await fetch(API + '/api/meetings/' + id);
+    const data = await res.json();
+    if (data.error) return;
+
+    viewingHistory = true;
+    updateRecordingUI();
+
+    // meeting detail → renderFullState 호환 형태로 변환
+    const state = {
+      utterances: data.utterances || [],
+      topics: data.topics || [],
+      issues: data.issues || {},
+      interventions: data.interventions || [],
+      references: data.references || [],
+    };
+    renderFullState(state);
+
+    // 헤더 업데이트
+    const m = data.meeting || {};
+    document.getElementById('meeting-label').textContent = m.title || 'Meeting #' + id;
+    document.getElementById('status-dot').className = 'dot' + (m.ended_at ? '' : ' active');
+  } catch(e) {}
+}
+
 // Init
 loadModels();
+loadHistory();
 refreshState();
 </script>
 </body>

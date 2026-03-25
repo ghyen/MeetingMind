@@ -45,8 +45,11 @@ class ConnectionManager:
 
     async def broadcast(self, data: dict) -> None:
         """모든 연결된 클라이언트에 데이터 전송."""
-        for connection in self.active_connections:
-            await connection.send_json(data)
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_json(data)
+            except Exception:
+                self.disconnect(connection)
 
 
 manager = ConnectionManager()
@@ -54,72 +57,180 @@ manager = ConnectionManager()
 
 @router.websocket("/ws/audio")
 async def audio_stream(websocket: WebSocket):
-    """오디오 청크를 받아 실시간 처리 결과를 반환.
+    """오디오 청크 → faster-whisper 실시간 STT + 화자 식별.
 
-    클라이언트 → 서버: 오디오 청크 (bytes)
-    서버 → 클라이언트: transcript, 토픽, 쟁점, 개입 알림 (JSON)
+    클라이언트 → 서버: 오디오 청크 (float32 PCM bytes, 0.5초 단위)
+    서버 → 클라이언트: {"type":"transcript", ...} + {"type":"analysis", ...}
     """
+    import asyncio
+    from stt.whisper_stt import WhisperSTT
+
     pipe = _get_pipeline()
-
     await manager.connect(websocket)
+    ws_open = True
 
-    # STT 모델 로드 (최초 1회)
-    if pipe.stt._recognizer is None:
-        try:
-            pipe.stt.load_model()
-        except Exception as e:
-            logger.error("STT 모델 로드 실패: %s", e, exc_info=True)
-            await websocket.send_json({"error": f"STT 모델 로드 실패: {e}"})
-            await websocket.close()
-            manager.disconnect(websocket)
-            return
+    async def safe_send(data):
+        if ws_open and websocket in manager.active_connections:
+            try:
+                await websocket.send_json(data)
+            except Exception:
+                pass
 
-    # 회의 자동 시작
+    whisper = WhisperSTT()
+    try:
+        await asyncio.to_thread(whisper.load_model)
+    except Exception as e:
+        logger.error("STT 모델 로드 실패: %s", e, exc_info=True)
+        await safe_send({"error": f"STT 모델 로드 실패: {e}"})
+        manager.disconnect(websocket)
+        return
+
     if not pipe.meeting_id:
         try:
             await pipe.start_meeting(title="실시간 회의")
         except Exception:
             logger.warning("회의 시작 실패", exc_info=True)
 
-    await websocket.send_json({"type": "ready", "message": "STT ready"})
+    await safe_send({"type": "ready", "message": "STT ready"})
 
-    chunk_count = 0
+    async def _bg_analysis(utt):
+        try:
+            await pipe.on_utterance(utt)
+            state = pipe.state
+            await safe_send({
+                "type": "analysis",
+                "topics": _serialize(state.topics),
+                "interventions": _serialize(state.latest_interventions),
+            })
+        except Exception as e:
+            logger.warning("파이프라인 분석 실패: %s", e)
+
     try:
         while True:
             audio_chunk = await websocket.receive_bytes()
-            chunk_count += 1
-            if chunk_count <= 3 or chunk_count % 50 == 0:
-                import numpy as np
-                samples = np.frombuffer(audio_chunk, dtype=np.float32)
-                rms = float(np.sqrt(np.mean(samples ** 2)))
-                logger.info(
-                    "Audio chunk #%d: %d bytes, %d samples, rms=%.4f",
-                    chunk_count, len(audio_chunk), len(samples), rms,
-                )
             try:
-                utterance = await pipe.stt.transcribe_chunk(audio_chunk)
+                utterance = await asyncio.to_thread(whisper.feed_chunk, audio_chunk)
                 if utterance:
-                    logger.info(
-                        "STT result: final=%s speaker=%s text='%s'",
-                        utterance.is_final, utterance.speaker, utterance.text,
-                    )
-                    if utterance.is_final:
-                        await pipe.on_utterance(utterance)
-                    state = pipe.state
-                    await websocket.send_json({
+                    logger.info("STT: [%s] %s: %s", utterance.time, utterance.speaker, utterance.text)
+                    await safe_send({
                         "type": "transcript",
                         "utterance": _serialize(utterance),
-                        "topics": _serialize(state.topics),
-                        "interventions": _serialize(state.interventions[-3:]),
                     })
+                    asyncio.create_task(_bg_analysis(utterance))
             except Exception as e:
-                logger.error("오디오 처리 오류: %s", e, exc_info=True)
-                await websocket.send_json({"type": "error", "message": str(e)})
+                logger.error("오디오 처리 오류: %s", e)
     except WebSocketDisconnect:
+        ws_open = False
+        utt = whisper.flush()
+        if utt:
+            try:
+                await pipe.on_utterance(utt)
+            except Exception:
+                pass
         manager.disconnect(websocket)
     except Exception as e:
-        logger.error("WebSocket 오류: %s", e, exc_info=True)
+        ws_open = False
+        logger.error("WebSocket 오류: %s", e)
         manager.disconnect(websocket)
+
+
+@router.websocket("/ws/speaker")
+async def speaker_stream(websocket: WebSocket):
+    """오디오 청크 → 화자 식별만 수행 (STT는 브라우저 Web Speech API 사용).
+
+    클라이언트 → 서버: 오디오 청크 (float32 PCM bytes)
+    서버 → 클라이언트: {"speaker": "Speaker 1"} or {"speaker": "Speaker 2"} ...
+    """
+    import numpy as np
+    from stt.sensevoice import SpeakerIdentifier
+    from config import settings
+
+    await websocket.accept()
+
+    speaker_id = SpeakerIdentifier()
+    if settings.diarization_enabled:
+        try:
+            speaker_id.load()
+        except Exception as e:
+            logger.error("화자 식별 모델 로드 실패: %s", e, exc_info=True)
+            await websocket.send_json({"error": f"화자 모델 로드 실패: {e}"})
+            await websocket.close()
+            return
+
+    await websocket.send_json({"type": "ready"})
+
+    # 오디오 샘플 축적 (발화 단위로 화자 식별)
+    utterance_samples: list[np.ndarray] = []
+    sample_count = 0
+
+    try:
+        while True:
+            audio_chunk = await websocket.receive_bytes()
+            samples = np.frombuffer(audio_chunk, dtype=np.float32)
+            utterance_samples.append(samples)
+            sample_count += len(samples)
+
+            # "identify" 텍스트 메시지를 받으면 축적된 오디오로 화자 식별
+            # 또는 일정량 축적 시 자동 식별은 하지 않음 — 클라이언트가 요청할 때만
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error("Speaker WS 오류: %s", e, exc_info=True)
+
+
+@router.websocket("/ws/speaker-id")
+async def speaker_id_stream(websocket: WebSocket):
+    """화자 식별 — 오디오 청크 축적 + 텍스트 명령으로 제어.
+
+    클라이언트 → 서버:
+      - bytes: 오디오 청크 (축적)
+      - text "identify": 축적된 오디오로 화자 식별 후 초기화
+      - text "reset": 축적 버퍼 초기화
+    서버 → 클라이언트:
+      - {"type":"ready"}
+      - {"type":"speaker", "speaker":"Speaker 1"}
+    """
+    import numpy as np
+    from stt.sensevoice import SpeakerIdentifier
+    from config import settings
+
+    await websocket.accept()
+
+    speaker_id = SpeakerIdentifier()
+    if settings.diarization_enabled:
+        try:
+            speaker_id.load()
+        except Exception as e:
+            logger.error("화자 식별 모델 로드 실패: %s", e, exc_info=True)
+            await websocket.send_json({"error": f"화자 모델 로드 실패: {e}"})
+            await websocket.close()
+            return
+
+    await websocket.send_json({"type": "ready"})
+
+    utterance_samples: list[np.ndarray] = []
+
+    try:
+        while True:
+            msg = await websocket.receive()
+            if msg.get("bytes"):
+                # 오디오 청크 축적
+                samples = np.frombuffer(msg["bytes"], dtype=np.float32)
+                utterance_samples.append(samples)
+            elif msg.get("text"):
+                cmd = msg["text"].strip()
+                if cmd == "identify" and utterance_samples:
+                    all_samples = np.concatenate(utterance_samples)
+                    speaker = speaker_id.identify(all_samples)
+                    utterance_samples = []
+                    await websocket.send_json({"type": "speaker", "speaker": speaker})
+                elif cmd == "reset":
+                    utterance_samples = []
+                    await websocket.send_json({"type": "reset", "speaker": "Speaker 1"})
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error("SpeakerID WS 오류: %s", e, exc_info=True)
 
 
 @router.websocket("/ws/updates")

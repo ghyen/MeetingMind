@@ -26,27 +26,14 @@ class AudioCapture:
         self._running = False
 
     async def from_file(self, file_path: str) -> AsyncIterator[bytes]:
-        """녹음 파일에서 오디오 청크 스트림 (MVP용).
+        """녹음 파일에서 오디오 청크 스트림.
 
-        지원 포맷: wav, flac, ogg (soundfile 지원 포맷)
-        자동으로 16kHz mono로 변환.
+        지원 포맷: wav, flac, ogg, mp3, aiff, m4a, webm 등 (audio_converter 참조)
+        자동으로 16kHz mono float32로 변환.
         """
-        import soundfile as sf
+        from audio_converter import convert_file
 
-        data, sr = sf.read(file_path, dtype="float32")
-
-        # stereo → mono
-        if data.ndim > 1:
-            data = data.mean(axis=1)
-
-        # resample to target sample rate
-        if sr != self.sample_rate:
-            target_len = int(len(data) * self.sample_rate / sr)
-            data = np.interp(
-                np.linspace(0, len(data) - 1, target_len),
-                np.arange(len(data)),
-                data,
-            ).astype(np.float32)
+        data = convert_file(file_path)
 
         # yield chunks
         for i in range(0, len(data), self.chunk_size):

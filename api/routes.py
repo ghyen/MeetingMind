@@ -84,30 +84,36 @@ async def get_meeting_state():
 
 @router.post("/meeting/upload")
 async def upload_audio(file: UploadFile):
-    """녹음 파일 업로드 → 분석 시작."""
-    pipe = _get_pipeline()
-    audio_bytes = await file.read()
+    """녹음 파일 업로드 → faster-whisper STT + 화자 식별 → 파이프라인."""
+    import asyncio
+    from audio_converter import convert_bytes
+    from stt.whisper_stt import WhisperFileSTT
 
-    # 회의 자동 시작 (아직 시작되지 않았으면)
+    pipe = _get_pipeline()
+    raw = await file.read()
+
+    # 오디오 디코딩 → 16kHz mono float32
+    try:
+        data = convert_bytes(raw, filename=file.filename or "audio.wav")
+    except Exception as e:
+        return {"error": f"오디오 변환 실패: {e}"}
+
+    # 회의 자동 시작
     if not pipe.meeting_id:
         await pipe.start_meeting(title=file.filename, audio_path=file.filename)
 
-    # STT 모델 로드 (최초 1회)
-    if pipe.stt._recognizer is None:
-        try:
-            pipe.stt.load_model()
-        except Exception as e:
-            return {"error": f"STT 모델 로드 실패: {e}"}
+    # faster-whisper로 배치 STT + 화자 식별
+    whisper = WhisperFileSTT()
+    try:
+        utterances = await asyncio.to_thread(whisper.transcribe_file, data)
+    except Exception as e:
+        return {"error": f"STT 처리 실패: {e}"}
 
-    # 오디오를 청크로 나눠서 처리
-    chunk_size = 16000 * 2  # 0.5초 분량 (float32 → 4bytes * 8000 samples)
+    # 파이프라인에 발화 전달
     results = []
-    for i in range(0, len(audio_bytes), chunk_size):
-        chunk = audio_bytes[i:i + chunk_size]
-        utterance = await pipe.stt.transcribe_chunk(chunk)
-        if utterance and utterance.is_final:
-            await pipe.on_utterance(utterance)
-            results.append(_serialize(utterance))
+    for utt in utterances:
+        await pipe.on_utterance(utt)
+        results.append(_serialize(utt))
 
     return {"filename": file.filename, "utterances": results, "status": "done"}
 
