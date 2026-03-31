@@ -64,6 +64,12 @@ CREATE TABLE IF NOT EXISTS refs (
     url TEXT,
     relevance_score REAL DEFAULT 0.0
 );
+
+CREATE TABLE IF NOT EXISTS summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meeting_id INTEGER NOT NULL UNIQUE REFERENCES meetings(id),
+    summary_json TEXT NOT NULL
+);
 """
 
 
@@ -256,6 +262,39 @@ async def get_references(meeting_id: int) -> list[dict]:
         return [dict(r) for r in await cur.fetchall()]
 
 
+# ── 회의록 요약 ──────────────────────────────────────
+
+
+async def save_summary(meeting_id: int, summary: dict) -> None:
+    summary_json = json.dumps(summary, ensure_ascii=False)
+    async with aiosqlite.connect(settings.db_path) as db:
+        cur = await db.execute(
+            "SELECT id FROM summaries WHERE meeting_id = ?", (meeting_id,),
+        )
+        existing = await cur.fetchone()
+        if existing:
+            await db.execute(
+                "UPDATE summaries SET summary_json = ? WHERE id = ?",
+                (summary_json, existing[0]),
+            )
+        else:
+            await db.execute(
+                "INSERT INTO summaries (meeting_id, summary_json) VALUES (?, ?)",
+                (meeting_id, summary_json),
+            )
+        await db.commit()
+
+
+async def get_summary(meeting_id: int) -> dict | None:
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT summary_json FROM summaries WHERE meeting_id = ?", (meeting_id,),
+        )
+        row = await cur.fetchone()
+        return json.loads(row["summary_json"]) if row else None
+
+
 # ── 전체 회의 데이터 복원 ─────────────────────────────
 
 async def get_full_meeting(meeting_id: int) -> dict | None:
@@ -270,4 +309,5 @@ async def get_full_meeting(meeting_id: int) -> dict | None:
         "issues": await get_issues(meeting_id),
         "interventions": await get_interventions(meeting_id),
         "references": await get_references(meeting_id),
+        "summary": await get_summary(meeting_id),
     }

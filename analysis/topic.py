@@ -23,11 +23,18 @@ class TopicDetector:
         self._recent: list[Utterance] = []
 
     async def check(self, utterance: Utterance) -> Topic | None:
-        """새 발화가 토픽 전환인지 판단. 전환이면 새 Topic 반환."""
-        self._recent.append(utterance)
-        self._recent = self._recent[-10:]
+        """새 발화가 토픽 전환인지 판단. 전환이면 새 Topic 반환.
 
-        # 첫 발화 시 초기 토픽 자동 생성
+        3단계 판단 프로세스:
+          1차 필터: 키워드 1개+ 또는 긴 침묵(3초+) → 후보 선별 (빠름, 비용 0)
+          2차 필터: 키워드 2개+ 동시 매칭 → LLM 없이 전환 확정 (빠름, 비용 0)
+          3차 판단: 1차 통과 & 2차 미통과 → LLM이 최종 판단 (느림, LLM 호출 비용)
+        이 구조로 대부분의 발화는 1차에서 빠르게 걸러지고, LLM 호출은 최소화됨.
+        """
+        self._recent.append(utterance)
+        self._recent = self._recent[-10:]  # LLM 컨텍스트용 최근 발화 유지
+
+        # 첫 발화 시 초기 토픽 자동 생성 — 회의 시작 시점의 기본 토픽
         if not self.segments:
             self._topic_counter += 1
             initial = Topic(
@@ -41,12 +48,13 @@ class TopicDetector:
         if not self._first_filter(utterance):
             return None
 
-        # 2차 필터: 키워드 2개+ → LLM 스킵
+        # 2차 필터 통과 시 LLM 호출 없이 즉시 토픽 전환 확정
         new_topic = self._second_filter(utterance)
         if new_topic is None:
-            # 3차 판단: LLM 최종 판단
+            # 1차만 통과한 경우 → LLM에게 최종 판단 위임
             new_topic = await self._llm_judge(utterance)
         if new_topic:
+            # 이전 토픽의 종료 시각 = 새 토픽의 시작 시각
             if self.segments:
                 self.segments[-1].end_time = new_topic.start_time
             self.segments.append(new_topic)

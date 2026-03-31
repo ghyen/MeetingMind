@@ -29,7 +29,13 @@ class IssueStructurer:
         self._pending: dict[int, list[Utterance]] = {}
 
     async def update(self, topic: Topic, new_utterance: Utterance) -> IssueGraph:
-        """새 발화를 반영하여 쟁점 구조 점진적 업데이트."""
+        """새 발화를 반영하여 쟁점 구조 점진적 업데이트.
+
+        매 발화마다 LLM을 호출하면 비용과 지연이 크므로 배치 전략 사용:
+        - 첫 발화: 즉시 _create_initial()로 초기 구조 생성
+        - 이후: pending 큐에 축적 → 5개 모이면 _apply_delta()로 일괄 반영
+        - pending < 5개: 기존 구조를 그대로 반환 (LLM 호출 안 함)
+        """
         existing = self._cache.get(topic.id)
         self._pending.setdefault(topic.id, []).append(new_utterance)
 
@@ -91,15 +97,18 @@ _MAX_POSITIONS = 5
 
 
 def _merge_positions(positions: list[Position]) -> list[Position]:
-    """같은 화자의 position을 병합하고 최대 개수를 제한."""
+    """같은 화자의 position을 병합하고 최대 개수를 제한.
+
+    LLM이 같은 화자를 별도 Position으로 반환하는 경우가 있으므로
+    코드 레벨에서 강제 병합하여 화자당 1개 Position을 보장.
+    stance는 더 상세한(긴) 것을 채택, arguments/evidence는 합산(중복 제거).
+    """
     by_speaker: dict[str, Position] = {}
     for p in positions:
         if p.speaker in by_speaker:
             existing = by_speaker[p.speaker]
-            # stance: 기존 것이 짧으면 새 것으로 교체, 아니면 유지
             if len(p.stance) > len(existing.stance):
                 existing.stance = p.stance
-            # arguments/evidence: 중복 제거하며 합치기
             for arg in p.arguments:
                 if arg not in existing.arguments:
                     existing.arguments.append(arg)

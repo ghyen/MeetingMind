@@ -38,7 +38,7 @@ UTTERANCES = [
 async def run():
     async with httpx.AsyncClient(timeout=300) as client:
         # Ollama 로컬 모델로 전환
-        resp = await client.post(f"{BASE_URL}/api/model", json={"provider": "ollama", "model": "qwen3.5:9b"})
+        resp = await client.post(f"{BASE_URL}/api/model", json={"provider": "ollama", "model": "qwen3.5:0.8b"})
         print(f"모델 전환: {resp.json()}\n")
 
         # 회의 시작

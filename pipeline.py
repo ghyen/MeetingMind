@@ -9,11 +9,49 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import time
 from dataclasses import dataclass, field
 
 from models import Utterance, Topic, IssueGraph, Intervention, Reference
 
 logger = logging.getLogger(__name__)
+
+
+class _StepTimer:
+    """파이프라인 단계별 소요 시간 측정."""
+
+    def __init__(self) -> None:
+        self._steps: list[tuple[str, float]] = []
+        self._t0 = time.perf_counter()
+
+    def step(self, name: str) -> "_StepCtx":
+        return _StepCtx(name, self._steps)
+
+    def log_summary(self, label: str) -> None:
+        total = time.perf_counter() - self._t0
+        if total == 0:
+            return
+        parts = []
+        for name, elapsed in self._steps:
+            pct = elapsed / total * 100
+            parts.append(f"{name}: {elapsed:.2f}s ({pct:.0f}%)")
+        logger.info(
+            "[%s] 총 %.2f초 | %s",
+            label, total, " | ".join(parts),
+        )
+
+
+class _StepCtx:
+    def __init__(self, name: str, steps: list) -> None:
+        self._name = name
+        self._steps = steps
+
+    async def __aenter__(self):
+        self._start = time.perf_counter()
+        return self
+
+    async def __aexit__(self, *exc):
+        self._steps.append((self._name, time.perf_counter() - self._start))
 
 
 @dataclass
@@ -36,7 +74,6 @@ class Pipeline:
         self.state = MeetingState()
         self.meeting_id: int | None = None
         self._on_update: list = []
-        self._stt = None
         self._topic_detector = None
         self._issue_structurer = None
         self._trigger_detector = None
@@ -53,13 +90,6 @@ class Pipeline:
                 await cb(event_type, data)
             except Exception:
                 logger.warning("이벤트 콜백 실패", exc_info=True)
-
-    @property
-    def stt(self):
-        if self._stt is None:
-            from stt.sensevoice import SenseVoiceEngine
-            self._stt = SenseVoiceEngine()
-        return self._stt
 
     @property
     def topic_detector(self):
@@ -103,53 +133,91 @@ class Pipeline:
         logger.info("회의 시작: meeting_id=%d", self.meeting_id)
         return self.meeting_id
 
-    async def end_meeting(self) -> None:
-        """회의 종료 → DB에 ended_at 기록."""
+    async def end_meeting(self) -> dict | None:
+        """회의 종료 → 회의록 요약 생성 → DB에 저장."""
+        summary = None
         if self.meeting_id:
             import db
+            from analysis.summary import generate_summary
+
+            summary = await generate_summary(self.state)
+            if summary:
+                await db.save_summary(self.meeting_id, summary)
+                logger.info("회의록 요약 생성 완료: meeting_id=%d", self.meeting_id)
+
             await db.end_meeting(self.meeting_id)
             logger.info("회의 종료: meeting_id=%d", self.meeting_id)
+        return summary
 
     async def on_utterance(self, utterance: Utterance) -> None:
-        """새 발화 수신 → 전체 파이프라인 트리거."""
+        """새 발화 수신 → 전체 파이프라인 트리거.
+
+        모든 입력 경로(WebSocket, 파일 업로드, 시뮬레이션)가 최종적으로 이 메서드를 호출.
+        처리 순서: DB저장 → 토픽감지 → 트리거감지 → 쟁점구조화+자료수집 → WS broadcast
+        """
+        timer = _StepTimer()
         self.state.utterances.append(utterance)
 
-        # DB 저장
-        await self._save_utterance(utterance)
+        # 1) DB 저장 — 발화 원문을 즉시 영구 저장
+        async with timer.step("DB저장"):
+            await self._save_utterance(utterance)
 
-        # 토픽 전환 감지
+        # 2) 토픽 전환 감지 — 3단계 필터(키워드→키워드2개+→LLM)로 판단
         new_topic = None
-        try:
-            new_topic = await self.topic_detector.check(utterance)
-            if new_topic:
-                self.state.topics.append(new_topic)
-                await self._save_topic(new_topic)
-        except Exception:
-            logger.warning("토픽 감지 실패", exc_info=True)
+        async with timer.step("토픽감지"):
+            try:
+                new_topic = await self.topic_detector.check(utterance)
+                if new_topic:
+                    self.state.topics.append(new_topic)
+                    await self._save_topic(new_topic)
+            except Exception:
+                logger.warning("토픽 감지 실패", exc_info=True)
 
-        # 현재 토픽에 발화 추가
+        # 3) 현재 토픽에 발화 연결 — 토픽별 발화 목록은 쟁점구조화/loop감지에 사용
         if self.state.topics:
             self.state.topics[-1].utterances.append(utterance)
 
-        # 쟁점 구조화 / 개입 감지 / 자료 수집
-        # Ollama는 직렬 처리라 병렬 호출 시 순차 대기 → 순차 실행이 더 효율적
+        # 4) 분석 모듈 실행
+        # Ollama는 내부적으로 요청을 직렬 처리하므로 병렬 호출해도 이득이 없음.
+        # OpenRouter 등 외부 API는 병렬 호출로 쟁점구조화+자료수집을 동시에 처리.
         from analysis.llm import _active_provider
         if _active_provider == "ollama":
-            await self._check_triggers(utterance)
-            await self._update_issues(utterance)
-            await self._search_references(utterance)
+            async with timer.step("트리거감지"):
+                await self._check_triggers(utterance)
+            async with timer.step("쟁점구조화"):
+                await self._update_issues(utterance)
+            async with timer.step("자료수집"):
+                await self._search_references(utterance)
         else:
-            await asyncio.gather(
-                self._update_issues(utterance),
-                self._check_triggers(utterance),
-                self._search_references(utterance),
-                return_exceptions=True,
-            )
+            # 트리거 감지는 키워드 기반이라 빠르므로 먼저 순차 실행
+            async with timer.step("트리거감지"):
+                await self._check_triggers(utterance)
+            # 쟁점구조화와 자료수집은 각각 LLM 호출이 필요하므로 병렬로 실행
+            t_issues = time.perf_counter()
+            t_refs = time.perf_counter()
 
-        # WebSocket broadcast
+            async def _timed_issues():
+                nonlocal t_issues
+                await self._update_issues(utterance)
+                t_issues = time.perf_counter() - t_issues
+
+            async def _timed_refs():
+                nonlocal t_refs
+                await self._search_references(utterance)
+                t_refs = time.perf_counter() - t_refs
+
+            await asyncio.gather(
+                _timed_issues(), _timed_refs(), return_exceptions=True,
+            )
+            timer._steps.append(("쟁점구조화", t_issues))
+            timer._steps.append(("자료수집", t_refs))
+
+        # 5) WebSocket broadcast — 연결된 모든 클라이언트에 실시간 push
         await self._emit("utterance", utterance)
         if new_topic:
             await self._emit("topic", new_topic)
+
+        timer.log_summary(f"파이프라인 발화#{len(self.state.utterances)}")
 
     async def _save_utterance(self, utterance: Utterance) -> None:
         if not self.meeting_id:
@@ -211,6 +279,7 @@ class Pipeline:
             logger.warning("트리거 감지 실패", exc_info=True)
 
     async def _search_references(self, utterance: Utterance) -> None:
+        """발화에서 엔티티 추출 → 각 엔티티별 사내DB+웹 검색 → 결과 축적."""
         try:
             entities = await self.entity_extractor.extract(utterance)
             for entity in entities:

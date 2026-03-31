@@ -134,7 +134,7 @@ async def run():
 
     async with httpx.AsyncClient(timeout=300) as client:
         # Ollama 로컬 모델로 전환
-        resp = await client.post(f"{BASE_URL}/api/model", json={"provider": "ollama", "model": "qwen3.5:9b"})
+        resp = await client.post(f"{BASE_URL}/api/model", json={"provider": "ollama", "model": "qwen3.5:0.8b"})
         print(f"모델 전환: {resp.json()}\n")
 
         # 회의 시작
@@ -300,7 +300,7 @@ async def run():
 
         # ── LLM 요약 품질 평가 ─────────────────────────────
         print(f"\n{'='*60}")
-        print(f"  LLM 요약 품질 평가 (qwen3.5:9b no-think)")
+        print(f"  LLM 요약 품질 평가 (qwen3.5:0.8b no-think)")
         print(f"{'='*60}\n")
 
         for tid, ig in issues.items():

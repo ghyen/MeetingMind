@@ -3,10 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # STT
-    stt_engine: str = "sensevoice"  # "sensevoice" | "faster_whisper"
-    stt_model_path: str = "models/sensevoice-small"
     stt_language: str = "ko"
-    sherpa_model_dir: str = "models/sherpa-onnx-streaming-zipformer-korean-2024-06-16"
 
     # VAD
     vad_threshold: float = 0.5

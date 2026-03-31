@@ -153,14 +153,19 @@ class WebSearch:
 
 
 class ReferenceCollector:
-    """사내 DB (벡터 검색) + 웹 검색 통합."""
+    """사내 DB (벡터 검색) + 웹 검색 통합.
+
+    두 소스를 병렬로 검색한 뒤 relevance_score 기준 내림차순 정렬하여 반환.
+    사내 문서 relevance_score = 1.0 - cosine_distance (0~1)
+    웹 검색 relevance_score = Tavily score 또는 0.0 (DuckDuckGo 폴백)
+    """
 
     def __init__(self) -> None:
         self.internal = InternalSearch()
         self.web = WebSearch()
 
     async def search(self, entity: Entity, top_k: int = 3) -> list[Reference]:
-        """엔티티 기반 검색 후 관련도 순 정렬."""
+        """엔티티의 search_query로 사내+웹 동시 검색 → 관련도 순 정렬."""
         internal_results, web_results = await asyncio.gather(
             self.internal.search(entity.search_query, top_k),
             self.web.search(entity.search_query, top_k),

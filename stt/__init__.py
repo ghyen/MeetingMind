@@ -1,6 +1,6 @@
 """STT 모듈 — 오디오 캡처, VAD, 화자 분리.
 
-사용 조합: SenseVoice-Small (STT) + sherpa-onnx (스트리밍/화자분리)
+사용 조합: faster-whisper (STT) + sherpa-onnx 3dspeaker (화자 식별)
 """
 
 from __future__ import annotations

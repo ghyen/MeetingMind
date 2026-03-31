@@ -44,7 +44,7 @@ UTTERANCES = [
 async def run():
     start = time.time()
     async with httpx.AsyncClient(timeout=300) as client:
-        await client.post(f"{BASE_URL}/api/model", json={"provider": "ollama", "model": "qwen3.5:9b"})
+        await client.post(f"{BASE_URL}/api/model", json={"provider": "ollama", "model": "qwen3.5:0.8b"})
         resp = await client.post(f"{BASE_URL}/api/meeting/start", json={"title": "마케팅 캠페인 리뷰"})
         print(f"회의 시작: {resp.json()}\n")
 

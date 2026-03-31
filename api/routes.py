@@ -57,13 +57,13 @@ async def start_meeting(req: StartMeetingRequest | None = None):
 
 @router.post("/meeting/end")
 async def end_meeting():
-    """현재 회의 종료."""
+    """현재 회의 종료 → 회의록 요약 생성."""
     pipe = _get_pipeline()
     if not pipe.meeting_id:
         return {"error": "진행 중인 회의가 없습니다"}
-    await pipe.end_meeting()
     meeting_id = pipe.meeting_id
-    return {"meeting_id": meeting_id, "status": "ended"}
+    summary = await pipe.end_meeting()
+    return {"meeting_id": meeting_id, "status": "ended", "summary": summary}
 
 
 # ── 실시간 상태 조회 (인메모리) ────────────────────────────
@@ -86,35 +86,49 @@ async def get_meeting_state():
 async def upload_audio(file: UploadFile):
     """녹음 파일 업로드 → faster-whisper STT + 화자 식별 → 파이프라인."""
     import asyncio
+    import logging
+    import time
     from audio_converter import convert_bytes
     from stt.whisper_stt import WhisperFileSTT
+    from pipeline import _StepTimer
 
+    upload_logger = logging.getLogger(__name__)
+    timer = _StepTimer()
     pipe = _get_pipeline()
     raw = await file.read()
 
     # 오디오 디코딩 → 16kHz mono float32
-    try:
-        data = convert_bytes(raw, filename=file.filename or "audio.wav")
-    except Exception as e:
-        return {"error": f"오디오 변환 실패: {e}"}
+    async with timer.step("오디오변환"):
+        try:
+            data = convert_bytes(raw, filename=file.filename or "audio.wav")
+        except Exception as e:
+            return {"error": f"오디오 변환 실패: {e}"}
+
+    audio_sec = len(data) / 16000
+    upload_logger.info("오디오 길이: %.1f초", audio_sec)
 
     # 회의 자동 시작
     if not pipe.meeting_id:
         await pipe.start_meeting(title=file.filename, audio_path=file.filename)
 
     # faster-whisper로 배치 STT + 화자 식별
-    whisper = WhisperFileSTT()
-    try:
-        utterances = await asyncio.to_thread(whisper.transcribe_file, data)
-    except Exception as e:
-        return {"error": f"STT 처리 실패: {e}"}
+    async with timer.step("Whisper STT"):
+        whisper = WhisperFileSTT()
+        try:
+            utterances = await asyncio.to_thread(whisper.transcribe_file, data)
+        except Exception as e:
+            return {"error": f"STT 처리 실패: {e}"}
+
+    upload_logger.info("STT 결과: %d개 발화", len(utterances))
 
     # 파이프라인에 발화 전달
-    results = []
-    for utt in utterances:
-        await pipe.on_utterance(utt)
-        results.append(_serialize(utt))
+    async with timer.step("분석 파이프라인"):
+        results = []
+        for utt in utterances:
+            await pipe.on_utterance(utt)
+            results.append(_serialize(utt))
 
+    timer.log_summary(f"업로드 전체 ({file.filename})")
     return {"filename": file.filename, "utterances": results, "status": "done"}
 
 
@@ -167,6 +181,16 @@ async def get_issue(topic_id: int):
     """특정 안건의 쟁점 구조 조회."""
     issue = _get_pipeline().state.issues.get(topic_id)
     return {"topic_id": topic_id, "issue": _serialize(issue) if issue else None}
+
+
+@router.get("/meeting/summary")
+async def get_summary():
+    """현재 회의 요약 조회."""
+    pipe = _get_pipeline()
+    if not pipe.meeting_id:
+        return {"error": "진행 중인 회의가 없습니다"}
+    summary = await db.get_summary(pipe.meeting_id)
+    return {"summary": summary}
 
 
 @router.get("/meeting/interventions")

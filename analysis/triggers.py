@@ -61,9 +61,11 @@ class TriggerDetector:
     # --- 키워드 기반 트리거 ---
 
     def _check_consensus(self, utterance: Utterance) -> Intervention | None:
+        """합의 신호 감지. 오탐 방지: 키워드 제거 후 남은 텍스트가 10자 초과면 무시.
+        예) "좋습니다" → 합의 O / "좋습니다. 민준 씨 쪽 대시보드는..." → 합의 X (발화의 도입부일 뿐)
+        """
         for kw in CONSENSUS_KEYWORDS:
             if kw in utterance.text:
-                # 키워드가 문장의 주요 내용인 경우만 합의로 판단
                 remainder = utterance.text.replace(kw, "", 1).strip().strip(".,!?~")
                 if len(remainder) > 10:
                     continue
@@ -104,7 +106,15 @@ class TriggerDetector:
     # --- 패턴 기반 트리거 ---
 
     def _check_loop(self, state: MeetingState) -> Intervention | None:
-        """논의 순환 감지: 최근 발화에서 같은 키워드 반복."""
+        """논의 순환 감지: 현재 토픽의 최근 10개 발화에서 같은 단어가 3회+ 반복되면 경고.
+
+        동작:
+        1. 현재 토픽의 최근 10개 발화에서 모든 단어 추출 (2자 미만, 불용어 제외)
+        2. Counter로 빈도 계산 → 상위 5개 중 3회+ 반복 단어 탐지
+        3. 반복 단어가 있으면 "논의가 반복되고 있습니다" 경고
+
+        불용어 필터(_STOPWORDS)가 없으면 "합니다", "정도" 같은 일반 단어로 오탐 발생.
+        """
         if not state.topics:
             return None
         current = state.topics[-1]

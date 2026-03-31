@@ -171,6 +171,15 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .dev-status.loading { color: var(--orange); }
 .dev-status.error { color: var(--red); }
 
+/* ── Chat Input ── */
+.chat-bar { padding: 10px 12px; background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; display: flex; gap: 8px; align-items: center; }
+.chat-bar input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; color: var(--text); padding: 8px 14px; font-size: 13px; font-family: inherit; }
+.chat-bar input:focus { border-color: var(--accent); outline: none; }
+.chat-bar input::placeholder { color: var(--text3); }
+.chat-bar button { width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--accent2); color: #fff; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
+.chat-bar button:hover { background: var(--accent); transform: scale(1.05); }
+.chat-bar button:disabled { background: var(--border); cursor: default; transform: none; }
+
 /* ── Toast ── */
 .toast-container { position: fixed; top: 60px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .toast { padding: 10px 16px; border-radius: 8px; font-size: 13px; color: #fff; pointer-events: auto; animation: slideIn 0.3s ease, fadeOut 0.5s ease 4s forwards; max-width: 340px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
@@ -202,6 +211,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
       <span class="rec-dot"></span>
       <span id="rec-label">Start Recording</span>
     </button>
+    <button id="cal-btn" class="btn btn-ghost" onclick="calibrateNoise()" title="2초간 배경 소음 측정">Calibrate</button>
     <button id="end-btn" class="btn btn-danger" onclick="endMeeting()" style="display:none;">End</button>
   </div>
   <div class="header-actions">
@@ -233,6 +243,10 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
         <div id="silence-bar" class="silence-bar"></div>
         <span id="silence-label" class="silence-label"></span>
       </div>
+    </div>
+    <div class="chat-bar">
+      <input id="chat-input" type="text" placeholder="Type a message as Speaker 1..." autocomplete="off">
+      <button id="chat-send" onclick="sendChat()">&#x27A4;</button>
     </div>
   </div>
 
@@ -338,6 +352,7 @@ function updateRecordingUI() {
   const btn = document.getElementById('rec-btn');
   const label = document.getElementById('rec-label');
   const endBtn = document.getElementById('end-btn');
+  const calBtn = document.getElementById('cal-btn');
   const dot = document.getElementById('status-dot');
   if (isRecording) {
     btn.className = 'rec-btn recording';
@@ -421,6 +436,37 @@ function setDevStatus(msg, type) {
   el.textContent = msg;
   el.className = 'dev-status' + (type ? ' ' + type : '');
 }
+
+// ── Chat (simple text simulator) ──
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const btn = document.getElementById('chat-send');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  btn.disabled = true;
+  try {
+    const res = await fetch(API + '/api/meeting/simulate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({speaker: 'Speaker 1', text}),
+    });
+    const data = await res.json();
+    if (!meetingActive) {
+      meetingActive = true;
+      document.getElementById('status-dot').className = 'dot active';
+      document.getElementById('meeting-label').textContent = 'Meeting';
+      meetingStartTime = meetingStartTime || Date.now();
+      if (!timerInterval) timerInterval = setInterval(updateTimer, 1000);
+    }
+    renderSimResult(data);
+  } catch(e) {}
+  btn.disabled = false;
+  input.focus();
+}
+
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
+});
 
 // ── Simulate ──
 async function sendUtterance() {
@@ -513,6 +559,17 @@ async function startMic() {
       const data = JSON.parse(e.data);
       if (data.error) { console.error('WS error:', data.error); return; }
       if (data.type === 'ready') { liveEl.textContent = 'Listening...'; return; }
+      if (data.type === 'calibrating') {
+        liveEl.textContent = 'Calibrating... (2s)';
+        document.getElementById('cal-btn').textContent = '...';
+        return;
+      }
+      if (data.type === 'calibrated') {
+        liveEl.textContent = `Calibrated (threshold: ${data.threshold.toFixed(4)})`;
+        document.getElementById('cal-btn').textContent = 'Calibrate';
+        setTimeout(() => { if (isRecording) liveEl.textContent = 'Listening...'; }, 1500);
+        return;
+      }
       if (data.type === 'transcript' && data.utterance) {
         liveEl.textContent = `[${data.utterance.speaker}] ${data.utterance.text}`;
         appendUtterance(data.utterance);
@@ -602,6 +659,85 @@ function stopMic() {
   }
   updateRecordingUI();
   refreshState();
+}
+
+let _calStream = null, _calCtx = null, _calAnalyser = null, _calRaf = null;
+let calibratedThreshold = 0.02; // 캘리브레이션 결과 (서버 + 클라이언트 공유)
+const CAL_DURATION_MS = 2000;
+
+async function calibrateNoise() {
+  const liveBar = document.getElementById('live-bar');
+  const liveEl = document.getElementById('live-transcript');
+  const calBtn = document.getElementById('cal-btn');
+
+  calBtn.textContent = '측정 중...';
+  calBtn.disabled = true;
+  liveBar.style.display = 'flex';
+  liveEl.textContent = 'Calibrating... 조용히 해주세요 (2초)';
+
+  try {
+    _calStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _calCtx = new AudioContext();
+    const source = _calCtx.createMediaStreamSource(_calStream);
+    _calAnalyser = _calCtx.createAnalyser();
+    _calAnalyser.fftSize = 512;
+    source.connect(_calAnalyser);
+
+    const rmsValues = [];
+
+    function measure() {
+      if (!_calAnalyser) return;
+      const data = new Float32Array(_calAnalyser.fftSize);
+      _calAnalyser.getFloatTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+      const rms = Math.sqrt(sum / data.length);
+      rmsValues.push(rms);
+      document.getElementById('mic-level-bar').style.width = Math.min(100, rms * 500) + '%';
+      _calRaf = requestAnimationFrame(measure);
+    }
+    measure();
+
+    // 2초 대기
+    await new Promise(r => setTimeout(r, CAL_DURATION_MS));
+
+    // 결과 계산
+    cancelAnimationFrame(_calRaf); _calRaf = null;
+    const avgRms = rmsValues.reduce((a, b) => a + b, 0) / rmsValues.length;
+    calibratedThreshold = Math.max(avgRms * 3, 0.005);
+
+    const level = calibratedThreshold < 0.01 ? 'Very quiet'
+      : calibratedThreshold < 0.03 ? 'Normal'
+      : calibratedThreshold < 0.06 ? 'Noisy' : 'Very noisy';
+
+    showToast({
+      trigger_type: 'calibration',
+      level: 'info',
+      message: `Calibration complete — ${level} (threshold: ${calibratedThreshold.toFixed(4)})`,
+    });
+    liveEl.textContent = `Calibrated: ${level}`;
+
+    // 서버에도 threshold 전달 (녹음 중이면)
+    if (_micWs?.readyState === WebSocket.OPEN) {
+      _micWs.send('calibrate:' + calibratedThreshold.toFixed(6));
+    }
+
+  } catch(e) {
+    setDevStatus('Calibration failed: ' + e.message, 'error');
+  } finally {
+    // 정리
+    if (_calStream) { _calStream.getTracks().forEach(t => t.stop()); _calStream = null; }
+    if (_calCtx) { _calCtx.close(); _calCtx = null; }
+    _calAnalyser = null;
+    document.getElementById('mic-level-bar').style.width = '0%';
+    calBtn.textContent = 'Calibrate';
+    calBtn.disabled = false;
+    if (!isRecording) {
+      setTimeout(() => {
+        if (!isRecording) liveBar.style.display = 'none';
+      }, 1500);
+    }
+  }
 }
 
 function _vizLoop() {

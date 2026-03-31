@@ -1,5 +1,13 @@
 """MeetingMind — 음성 회의 어시스턴트."""
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s | %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 

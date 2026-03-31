@@ -94,6 +94,9 @@ async def audio_stream(websocket: WebSocket):
     await safe_send({"type": "ready", "message": "STT ready"})
 
     async def _bg_analysis(utt):
+        """백그라운드 태스크: 발화를 파이프라인에 전달 → 분석 결과를 같은 WebSocket에 push.
+        asyncio.create_task()로 실행되어 다음 오디오 청크 수신을 블로킹하지 않음.
+        """
         try:
             await pipe.on_utterance(utt)
             state = pipe.state
@@ -107,9 +110,31 @@ async def audio_stream(websocket: WebSocket):
 
     try:
         while True:
-            audio_chunk = await websocket.receive_bytes()
+            msg = await websocket.receive()
+            # 텍스트 명령 처리
+            if msg.get("text"):
+                cmd = msg["text"].strip()
+                if cmd.startswith("calibrate:"):
+                    # 클라이언트에서 측정한 threshold 적용
+                    try:
+                        val = float(cmd.split(":")[1])
+                        whisper._vad_threshold = val
+                        whisper._noise_floor = val / whisper._vad_multiplier
+                        logger.info("캘리브레이션 적용: threshold=%.4f", val)
+                    except ValueError:
+                        pass
+                elif cmd == "calibrate":
+                    whisper.start_calibration()
+                    await safe_send({"type": "calibrating"})
+                continue
+            audio_chunk = msg.get("bytes")
+            if not audio_chunk:
+                continue
             try:
+                was_calibrating = whisper._calibrating
                 utterance = await asyncio.to_thread(whisper.feed_chunk, audio_chunk)
+                if was_calibrating and not whisper._calibrating:
+                    await safe_send({"type": "calibrated", "threshold": whisper._vad_threshold})
                 if utterance:
                     logger.info("STT: [%s] %s: %s", utterance.time, utterance.speaker, utterance.text)
                     await safe_send({
@@ -142,7 +167,7 @@ async def speaker_stream(websocket: WebSocket):
     서버 → 클라이언트: {"speaker": "Speaker 1"} or {"speaker": "Speaker 2"} ...
     """
     import numpy as np
-    from stt.sensevoice import SpeakerIdentifier
+    from stt.speaker import SpeakerIdentifier
     from config import settings
 
     await websocket.accept()
@@ -191,7 +216,7 @@ async def speaker_id_stream(websocket: WebSocket):
       - {"type":"speaker", "speaker":"Speaker 1"}
     """
     import numpy as np
-    from stt.sensevoice import SpeakerIdentifier
+    from stt.speaker import SpeakerIdentifier
     from config import settings
 
     await websocket.accept()

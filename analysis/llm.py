@@ -73,7 +73,12 @@ async def _ask_ollama(prompt: str, model: str) -> str:
 
 
 async def ask_json(prompt: str, *, model: str | None = None) -> dict:
-    """LLM 호출 → JSON dict 반환."""
+    """LLM 호출 → JSON dict 반환.
+
+    모든 분석 모듈(토픽 감지, 쟁점 구조화, 엔티티 추출)이 이 함수를 통해 LLM에 접근.
+    프로바이더에 따라 Ollama 네이티브 API 또는 OpenAI 호환 API를 사용.
+    응답에서 마크다운 코드블록(```json ... ```)을 제거한 뒤 JSON 파싱.
+    """
     use_model = model or _active_model
 
     if _active_provider == "ollama":
@@ -87,7 +92,7 @@ async def ask_json(prompt: str, *, model: str | None = None) -> dict:
         )
         text = response.choices[0].message.content
 
-    # JSON 추출 (마크다운 코드블록 등 제거)
+    # JSON 추출 — LLM이 ```json ... ``` 형태로 감싸서 응답하는 경우 코드블록 마커 제거
     text = text.strip()
     if text.startswith("```"):
         lines = text.split("\n")
