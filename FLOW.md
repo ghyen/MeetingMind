@@ -491,7 +491,7 @@ ask_json(prompt)                                     ← llm.py:75-97
   │     think=False로 reasoning 비활성화
   │     timeout: 120초
   │
-  └── provider="openrouter" → OpenAI 호환 API         ← llm.py:82-88
+  └── provider="openrouter" → OpenAI 호환 API           ← llm.py:82-88
         response_format={"type":"json_object"}
   │
   ▼

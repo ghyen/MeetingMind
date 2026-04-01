@@ -27,9 +27,9 @@ class Settings(BaseSettings):
 
     # LLM
     llm_api_key: str = ""
-    llm_provider: str = "openrouter"  # "openrouter" | "ollama"
-    llm_model_fast: str = "nvidia/nemotron-3-super-120b-a12b:free"
-    llm_model_deep: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    llm_provider: str = "ollama"  # "ollama" | "openrouter"
+    llm_model_fast: str = "qwen3.5:0.8b"
+    llm_model_deep: str = "qwen3.5:0.8b"
     ollama_base_url: str = "http://localhost:11434/v1"
 
     # DB
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     port: int = 8000
     audio_chunk_ms: int = 500
 
-    model_config = {"env_file": ".env", "env_prefix": "MM_"}
+    model_config = {"env_file": ".env", "env_prefix": "MM_", "extra": "ignore"}
 
 
 settings = Settings()

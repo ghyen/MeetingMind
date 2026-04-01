@@ -41,6 +41,8 @@ class ModelSelectRequest(BaseModel):
 
 class StartMeetingRequest(BaseModel):
     title: str | None = None
+    company: str = ""
+    description: str = ""
 
 
 # ── 회의 라이프사이클 ────────────────────────────────────
@@ -51,7 +53,11 @@ async def start_meeting(req: StartMeetingRequest | None = None):
     """새 회의 시작 → DB에 레코드 생성."""
     pipe = _get_pipeline()
     title = req.title if req else None
-    meeting_id = await pipe.start_meeting(title=title)
+    company = req.company if req else ""
+    description = req.description if req else ""
+    meeting_id = await pipe.start_meeting(
+        title=title, company=company, description=description,
+    )
     return {"meeting_id": meeting_id, "status": "started"}
 
 
@@ -161,13 +167,16 @@ async def simulate_utterance(req: SimulateRequest):
     await pipe.on_utterance(utterance)
 
     state = pipe.state
-    return {
+    result = {
         "utterance": _serialize(utterance),
         "topics": _serialize(state.topics),
         "issues": {str(k): _serialize(v) for k, v in state.issues.items()},
         "interventions": _serialize(state.latest_interventions),
         "references": _serialize(state.references[-5:]),
     }
+    if state.latest_corrections:
+        result["corrections"] = _serialize(state.latest_corrections)
+    return result
 
 
 @router.get("/meeting/topics")
@@ -214,6 +223,7 @@ async def reset_meeting():
     pipe.topic_detector._recent = []
     pipe.issue_structurer._cache = {}
     pipe.issue_structurer._pending = {}
+    pipe._stt_corrector = None
     return {"status": "reset"}
 
 

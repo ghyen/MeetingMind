@@ -180,6 +180,18 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .chat-bar button:hover { background: var(--accent); transform: scale(1.05); }
 .chat-bar button:disabled { background: var(--border); cursor: default; transform: none; }
 
+/* ── Modal ── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+.modal-overlay.open { opacity: 1; pointer-events: auto; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
+.modal h2 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+.modal label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.modal input, .modal textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 8px 12px; font-size: 13px; font-family: inherit; margin-bottom: 12px; }
+.modal input:focus, .modal textarea:focus { border-color: var(--accent); outline: none; }
+.modal textarea { resize: vertical; min-height: 60px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.modal .hint { font-size: 11px; color: var(--text3); margin-top: -8px; margin-bottom: 12px; }
+
 /* ── Toast ── */
 .toast-container { position: fixed; top: 60px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .toast { padding: 10px 16px; border-radius: 8px; font-size: 13px; color: #fff; pointer-events: auto; animation: slideIn 0.3s ease, fadeOut 0.5s ease 4s forwards; max-width: 340px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
@@ -312,6 +324,22 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
   <div id="dev-status" class="dev-status"></div>
 </div>
 
+<!-- Meeting Context Modal -->
+<div id="meeting-modal" class="modal-overlay">
+  <div class="modal">
+    <h2>Meeting Info</h2>
+    <label for="modal-company">Company</label>
+    <input id="modal-company" type="text" placeholder="e.g. Anthropic">
+    <label for="modal-desc">Meeting Description</label>
+    <textarea id="modal-desc" rows="3" placeholder="e.g. Q1 마케팅 예산 검토 회의"></textarea>
+    <div class="hint">STT 교정 시 회의 맥락에 맞는 용어로 보정합니다</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Skip</button>
+      <button class="btn btn-primary" onclick="confirmModal()">Start</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = '';
 const SPEAKER_COLORS = { A: 'speaker-a', B: 'speaker-b', C: 'speaker-c', D: 'speaker-d' };
@@ -332,21 +360,46 @@ let viewingHistory = false;
 // ── Recording (unified mic + meeting start) ──
 async function toggleRecording() {
   if (isRecording) {
-    // 녹음 중 → 일시정지 (마이크 끔, 회의 유지)
     stopMic();
   } else if (meetingActive) {
-    // 일시정지 상태 → 녹음 재개
     startMic();
   } else {
-    // 새 회의 시작 + 녹음
+    // 새 회의 — 모달로 회의 정보 입력
     if (viewingHistory) {
       viewingHistory = false;
       uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
     }
-    await startMeeting();
-    startMic();
+    openModal();
   }
 }
+
+function openModal() {
+  document.getElementById('meeting-modal').classList.add('open');
+  document.getElementById('modal-company').focus();
+}
+function closeModal() {
+  document.getElementById('meeting-modal').classList.remove('open');
+  // Skip → 빈 컨텍스트로 시작
+  _startWithContext('', '');
+}
+async function confirmModal() {
+  const company = document.getElementById('modal-company').value.trim();
+  const desc = document.getElementById('modal-desc').value.trim();
+  document.getElementById('meeting-modal').classList.remove('open');
+  await _startWithContext(company, desc);
+}
+async function _startWithContext(company, description) {
+  await startMeeting(company, description);
+  startMic();
+}
+
+// modal Enter/Escape
+document.addEventListener('keydown', e => {
+  const modal = document.getElementById('meeting-modal');
+  if (!modal.classList.contains('open')) return;
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmModal(); }
+  if (e.key === 'Escape') { closeModal(); }
+});
 
 function updateRecordingUI() {
   const btn = document.getElementById('rec-btn');
@@ -373,9 +426,12 @@ function updateRecordingUI() {
 }
 
 // ── Meeting lifecycle ──
-async function startMeeting() {
+async function startMeeting(company, description) {
   try {
-    const res = await fetch(API + '/api/meeting/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+    const body = {};
+    if (company) body.company = company;
+    if (description) body.description = description;
+    const res = await fetch(API + '/api/meeting/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const data = await res.json();
     meetingActive = true;
     meetingStartTime = Date.now();
@@ -578,6 +634,7 @@ async function startMic() {
       if (data.type === 'analysis') {
         if (data.topics) renderTopics(data.topics);
         if (data.interventions) renderNewInterventions(data.interventions);
+        if (data.corrections) applyCorrections(data.corrections);
       }
     };
     _micWs.onerror = (e) => console.error('WS error:', e);
@@ -783,6 +840,7 @@ function renderSimResult(data) {
   renderIssues(data.issues || {});
   renderNewInterventions(data.interventions || []);
   renderReferences(data.references || []);
+  if (data.corrections) applyCorrections(data.corrections);
 }
 
 function renderFullState(data) {
@@ -810,6 +868,28 @@ function appendUtterance(u) {
   document.getElementById('utt-count').textContent = uttCount;
   el.insertAdjacentHTML('beforeend', makeUtteranceHtml(u));
   el.scrollTop = el.scrollHeight;
+}
+
+function applyCorrections(corrections) {
+  // 교정된 발화의 텍스트를 transcript에서 업데이트
+  const items = document.querySelectorAll('.transcript-item');
+  for (const c of corrections) {
+    for (const item of items) {
+      const timeEl = item.querySelector('.transcript-time');
+      const speakerEl = item.querySelector('.transcript-speaker');
+      const textEl = item.querySelector('.transcript-text');
+      if (!timeEl || !textEl) continue;
+      const itemTime = timeEl.textContent.trim();
+      const itemSpeaker = speakerEl ? speakerEl.textContent.trim() : '';
+      if (itemTime === c.time && itemSpeaker.includes(c.speaker)) {
+        textEl.textContent = c.text;
+        textEl.style.transition = 'background 0.5s';
+        textEl.style.background = 'rgba(108,138,255,0.15)';
+        setTimeout(() => { textEl.style.background = ''; }, 2000);
+        break;
+      }
+    }
+  }
 }
 
 function makeUtteranceHtml(u) {

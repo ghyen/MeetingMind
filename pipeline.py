@@ -64,6 +64,7 @@ class MeetingState:
     interventions: list[Intervention] = field(default_factory=list)
     latest_interventions: list[Intervention] = field(default_factory=list)
     references: list[Reference] = field(default_factory=list)
+    latest_corrections: list[Utterance] = field(default_factory=list)
     current_silence_ms: float = 0.0
 
 
@@ -79,6 +80,7 @@ class Pipeline:
         self._trigger_detector = None
         self._entity_extractor = None
         self._reference_collector = None
+        self._stt_corrector = None
 
     def add_listener(self, callback) -> None:
         """상태 변경 시 호출할 콜백 등록."""
@@ -126,10 +128,27 @@ class Pipeline:
             self._reference_collector = ReferenceCollector()
         return self._reference_collector
 
-    async def start_meeting(self, title: str | None = None, audio_path: str | None = None) -> int:
+    @property
+    def stt_corrector(self):
+        if self._stt_corrector is None:
+            from analysis.correction import STTCorrector
+            self._stt_corrector = STTCorrector()
+        return self._stt_corrector
+
+    async def start_meeting(
+        self,
+        title: str | None = None,
+        audio_path: str | None = None,
+        company: str = "",
+        description: str = "",
+    ) -> int:
         """새 회의 시작 → DB에 레코드 생성, meeting_id 반환."""
         import db
         self.meeting_id = await db.create_meeting(title=title, audio_path=audio_path)
+        # 회의 컨텍스트 설정 → STT 교정에 활용
+        if company or description:
+            from analysis.correction import MeetingContext
+            self.stt_corrector.set_context(MeetingContext(company=company, description=description))
         logger.info("회의 시작: meeting_id=%d", self.meeting_id)
         return self.meeting_id
 
@@ -161,6 +180,10 @@ class Pipeline:
         # 1) DB 저장 — 발화 원문을 즉시 영구 저장
         async with timer.step("DB저장"):
             await self._save_utterance(utterance)
+
+        # 1.5) STT 교정 — 5개 발화마다 배치 교정
+        async with timer.step("STT교정"):
+            await self._correct_stt(utterance)
 
         # 2) 토픽 전환 감지 — 3단계 필터(키워드→키워드2개+→LLM)로 판단
         new_topic = None
@@ -218,6 +241,24 @@ class Pipeline:
             await self._emit("topic", new_topic)
 
         timer.log_summary(f"파이프라인 발화#{len(self.state.utterances)}")
+
+    async def _correct_stt(self, utterance: Utterance) -> None:
+        """STT 교정 — 5개 발화 배치 교정 후 UI 반영."""
+        self.state.latest_corrections = []
+        try:
+            corrected = await self.stt_corrector.feed(utterance)
+            if corrected:
+                self.state.latest_corrections = corrected
+                await self._emit("correction", corrected)
+                # DB에 교정된 텍스트 업데이트
+                if self.meeting_id:
+                    import db
+                    for u in corrected:
+                        await db.update_utterance_text(
+                            self.meeting_id, u.time, u.speaker, u.text,
+                        )
+        except Exception:
+            logger.warning("STT 교정 실패", exc_info=True)
 
     async def _save_utterance(self, utterance: Utterance) -> None:
         if not self.meeting_id:

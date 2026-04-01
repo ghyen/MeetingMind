@@ -100,11 +100,14 @@ async def audio_stream(websocket: WebSocket):
         try:
             await pipe.on_utterance(utt)
             state = pipe.state
-            await safe_send({
+            msg = {
                 "type": "analysis",
                 "topics": _serialize(state.topics),
                 "interventions": _serialize(state.latest_interventions),
-            })
+            }
+            if state.latest_corrections:
+                msg["corrections"] = _serialize(state.latest_corrections)
+            await safe_send(msg)
         except Exception as e:
             logger.warning("파이프라인 분석 실패: %s", e)
 

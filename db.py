@@ -158,3 +158,15 @@ async def save_reference(
             (meeting_id, query, source, title, snippet, url, relevance_score),
         )
         await db.commit()
+
+
+async def update_utterance_text(
+    meeting_id: int, time: str, speaker: str, text: str,
+) -> None:
+    """교정된 발화 텍스트를 DB에 업데이트."""
+    async with await _get_db() as db:
+        await db.execute(
+            "UPDATE utterances SET text = ? WHERE meeting_id = ? AND time = ? AND speaker = ?",
+            (text, meeting_id, time, speaker),
+        )
+        await db.commit()

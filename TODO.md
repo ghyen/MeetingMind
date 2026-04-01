@@ -2,6 +2,59 @@
 
 ---
 
+## 15. 토픽 감지 묵음 체크 Dead Code 수정
+
+**현재 문제**: `topic.py`의 stage 1에서 묵음(3초+)을 토픽 전환 후보로 판단하는 로직이 있으나, `_last_silence_ms`가 **항상 0**이라 실제로 작동하지 않음. 파이프라인에서 묵음 시간을 `TopicDetector`에 전달하는 경로가 없음.
+
+```python
+# topic.py — stage 1 (현재 dead code)
+if self._last_silence_ms >= settings.topic_silence_threshold_sec * 1000:
+    # 이 조건은 절대 True가 되지 않음 (_last_silence_ms = 0 고정)
+```
+
+**수정 방향**:
+- `pipeline.py`에서 `WhisperSTT`의 묵음 시간을 `TopicDetector`에 전달하는 경로 추가
+- 또는 `VADFilter.get_silence_duration_ms()`를 활용하여 묵음 추적
+- `_last_silence_ms` 업데이트 로직 구현
+
+**관련 파일**: `analysis/topic.py`, `pipeline.py`, `stt/whisper_stt.py`
+
+---
+
+## 16. 루프 감지 오탐 개선 — 도메인 용어 반복 필터링
+
+**현재 문제**: `triggers.py`의 `_check_loop()`가 최근 10개 발화에서 동일 단어 3회 이상 반복을 루프로 판정하는데, **도메인 핵심 용어의 정상적 반복을 루프로 오탐**할 수 있음.
+
+- 예: 금융 회의에서 "결제", "수수료", "이율" 반복 → 정상 논의인데 루프 경고 발동
+- 불용어 리스트(`_STOPWORDS`)가 한국어 형태소 위주로 제한적 — 도메인 용어 미포함
+- 루프 판정 문맥 윈도우(10발화)와 반복 횟수(3회) 모두 하드코딩
+
+**수정 방향**:
+- 현재 토픽의 키워드를 동적 불용어로 추가 (토픽명에 포함된 단어는 루프 대상에서 제외)
+- 단순 단어 빈도가 아닌, "새로운 정보 없이 동일 주장 반복"을 감지하는 방식으로 개선
+- 루프 판정 전 의미적 유사도 체크 (같은 단어라도 맥락이 다르면 루프 아님)
+
+**관련 파일**: `analysis/triggers.py`, `config.py`
+
+---
+
+## 17. TTS 자료 요약 — 개입 타이밍 설계
+
+**현재 문제**: TODO#11(TTS 기반 자료 요약)의 트리거 조건(침묵, info_needed, loop)이 정의되어 있으나, **회의 중 AI 음성 개입이 오히려 방해가 될 수 있는 상황**에 대한 고려가 부족함.
+
+- 활발한 토론 중 침묵은 "생각 정리" 시간일 수 있음 → TTS가 끼어들면 흐름 끊김
+- 빠른 발언 교대 중 info_needed 키워드가 수사적 표현일 수 있음 → 불필요한 개입
+- 연속 TTS 쿨다운(30초)만으로는 부적절한 타이밍 방지가 불충분
+
+**수정 방향**:
+- 개입 적합도 판단 로직 추가: 침묵 길이, 직전 발화 속도, 토픽 진행 상태 등 복합 조건
+- 사용자 컨트롤 강화: TTS on/off뿐 아니라 "요약 준비됨" 알림 → 사용자가 재생 결정
+- push형(자동 재생) vs pull형(알림만, 사용자 트리거) 모드 선택
+
+**관련 파일**: `pipeline.py` (`_maybe_speak_references`), `config.py`, `static/index.html`
+
+---
+
 ## 12. 오디오 스트리밍-추론 파이프라인 오버랩 (레이턴시 최적화)
 
 **현재 문제**: 클라이언트에서 오디오 패킷을 스트리밍으로 수신하다가 END 신호가 오면 STT → LLM 추론 파이프라인이 시작되는데, 추론 중에는 새로 도착하는 오디오 패킷이 대기 상태로 블로킹됨. 추론 완료 후에야 다음 오디오를 처리하므로 발화 간 레이턴시가 누적됨.
@@ -88,6 +141,46 @@ PROCESSING → [추론 완료] → pending_buffer 확인 → BUFFERING 또는 ID
 - `config.py`: 후처리 관련 설정 추가
 - `pipeline.py`: 후처리 단계 삽입
 - `api/routes.py`: 회의 생성 시 도메인/용어 입력 API
+
+---
+
+## 14. STT 엔진 마이그레이션: faster-whisper → Cohere Transcribe
+
+**현재**: faster-whisper large-v3 (CTranslate2, CPU int8) — M2 Pro에서 RTFx ~15x
+**목표**: Cohere Transcribe (2B, Apache 2.0)로 교체하여 STT 정확도 향상
+
+**배경**:
+- Cohere Transcribe: WER 5.42% vs Whisper large-v3: 7.44% (영어 기준 27% 개선)
+- 한국어 포함 14개 언어 지원, HF Open ASR 리더보드 1위 (2026-03-26)
+- 단, GPU 최적화 모델이므로 M2 Pro CPU에서는 faster-whisper보다 느림
+- **GPU 서버 배포 시 전환 권장** (A100 기준 RTFx 525x)
+
+**속도 비교 (M2 Pro 32GB 예상)**:
+
+| | faster-whisper (현재) | Cohere Transcribe |
+|---|---|---|
+| 런타임 | CTranslate2 CPU int8 | PyTorch FP16 |
+| 10분 오디오 | ~40초 | ~2-4분 |
+| 메모리 | ~1.5GB | ~4GB |
+
+**마이그레이션 조건**: GPU 서버 환경이 확보되었을 때 진행
+
+### 14-1. 구현 계획
+- `stt/cohere_stt.py` 신규: `WhisperSTT`와 동일 인터페이스 (`feed_chunk`, `transcribe_file`)
+- `config.py`: `stt_engine: str = "whisper" | "cohere"` 설정 추가
+- `api/websocket.py`: 엔진 선택에 따라 STT 인스턴스 분기
+- 의존성 추가: `transformers>=5.4.0`, `torch`
+
+### 14-2. 검증 항목
+- [ ] 한국어 WER 비교 테스트 (faster-whisper vs Cohere, 동일 샘플)
+- [ ] GPU 환경 처리 속도 벤치마크
+- [ ] 양자화 모델 출시 여부 확인 (2B FP16 → INT8/INT4)
+- [ ] MPS(Apple Metal) 지원 상태 확인
+
+### 14-3. 관련 자료
+- HuggingFace: `CohereLabs/cohere-transcribe-03-2026`
+- 라이선스: Apache 2.0
+- 공식 블로그: https://cohere.com/blog/transcribe
 
 ---
 
