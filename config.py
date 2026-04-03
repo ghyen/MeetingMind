@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     # LLM
     llm_api_key: str = ""
     llm_provider: str = "ollama"  # "ollama" | "openrouter" | "bonsai"
-    llm_model_fast: str = "gemma4:e4b"
-    llm_model_deep: str = "gemma4:e4b"
+    llm_model_fast: str = "gemma4:e2b"
+    llm_model_deep: str = "gemma4:e2b"
     ollama_base_url: str = "http://localhost:11434/v1"
     bonsai_base_url: str = "http://localhost:8080/v1"
     bonsai_model: str = "bonsai-8b"
