@@ -109,6 +109,18 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .silence-bar::after { content: ''; position: absolute; left: 0; top: 0; height: 100%; width: var(--progress, 0%); background: var(--orange); border-radius: 2px; transition: width 0.15s; }
 .silence-label { font-size: 11px; color: var(--text3); font-variant-numeric: tabular-nums; min-width: 30px; }
 
+/* Processing status indicators */
+.status-indicator { display: flex; align-items: center; gap: 6px; }
+.status-indicator .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.status-indicator .status-text { font-size: 12px; white-space: nowrap; }
+.status-meta { font-size: 11px; color: var(--text3); font-variant-numeric: tabular-nums; }
+.status-listening .status-dot { background: var(--text3); }
+.status-buffering .status-dot { background: var(--green); animation: pulse-dot 1s infinite; }
+.status-buffering .status-text { color: var(--green); font-weight: 600; }
+.status-analyzing .status-dot { background: var(--orange); animation: pulse-dot 0.8s infinite; }
+.status-analyzing .status-text { color: var(--orange); font-weight: 600; }
+@keyframes pulse-dot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+
 /* ── Center: Topics + Issues ── */
 .topic-section { margin-bottom: 16px; }
 .topic-tab-bar { display: flex; gap: 4px; padding: 0 16px; overflow-x: auto; flex-shrink: 0; padding-bottom: 8px; }
@@ -192,6 +204,23 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .modal .hint { font-size: 11px; color: var(--text3); margin-top: -8px; margin-bottom: 12px; }
 
+/* ── Log Panel ── */
+.log-panel { flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--border); height: 32px; overflow: hidden; transition: height 0.2s ease; }
+.log-panel.expanded { height: 220px; display: flex; flex-direction: column; }
+.log-header { height: 32px; min-height: 32px; display: flex; align-items: center; padding: 0 16px; cursor: pointer; gap: 8px; font-size: 12px; font-weight: 600; color: var(--text2); user-select: none; }
+.log-header:hover { background: var(--surface2); }
+.log-toggle { margin-left: auto; font-size: 10px; transition: transform 0.2s; }
+.log-panel.expanded .log-toggle { transform: rotate(180deg); }
+.log-body { flex: 1; overflow-y: auto; padding: 4px 16px 8px; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 11px; line-height: 1.6; display: none; }
+.log-panel.expanded .log-body { display: block; }
+.log-body::-webkit-scrollbar { width: 4px; }
+.log-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.log-entry { color: var(--text2); white-space: pre-wrap; word-break: break-all; padding: 1px 0; }
+.log-entry.warning { color: var(--orange); }
+.log-entry.error { color: var(--red); }
+.log-new-dot { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.log-panel:not(.expanded) .log-new-dot.active { display: inline-block; animation: pulse-dot 1s infinite; }
+
 /* ── Toast ── */
 .toast-container { position: fixed; top: 60px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .toast { padding: 10px 16px; border-radius: 8px; font-size: 13px; color: #fff; pointer-events: auto; animation: slideIn 0.3s ease, fadeOut 0.5s ease 4s forwards; max-width: 340px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
@@ -251,6 +280,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
       <span id="live-icon" style="font-size:14px;">&#x1F3A4;</span>
       <div class="mic-level"><div id="mic-level-bar" class="mic-level-bar"></div></div>
       <span id="live-transcript">Listening...</span>
+      <span id="chunk-counter" class="status-meta" style="display:none;"></span>
       <div id="silence-indicator" class="silence-indicator" style="display:none;">
         <div id="silence-bar" class="silence-bar"></div>
         <span id="silence-label" class="silence-label"></span>
@@ -290,6 +320,17 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
     </div>
   </div>
 
+</div>
+
+<!-- Log Panel -->
+<div id="log-panel" class="log-panel">
+  <div class="log-header" onclick="toggleLogPanel()">
+    <span>Server Logs</span>
+    <span id="log-new-dot" class="log-new-dot"></span>
+    <span id="log-count" class="panel-badge">0</span>
+    <span class="log-toggle">&#x25B2;</span>
+  </div>
+  <div id="log-body" class="log-body"></div>
 </div>
 
 <!-- Dev Panel Toggle (in header) -->
@@ -596,6 +637,28 @@ let _micAnalyser = null, _micScriptNode = null, _micRaf = null;
 const SILENCE_THRESHOLD = 0.01;
 const ENDPOINT_SEC = 0.8;
 let _silenceStart = null;
+let _chunkCount = 0;
+
+function _setLiveStatus(state, bufferSec) {
+  const el = document.getElementById('live-transcript');
+  const counter = document.getElementById('chunk-counter');
+  if (_chunkCount > 0) {
+    counter.textContent = _chunkCount + ' chunks';
+    counter.style.display = '';
+  }
+  switch (state) {
+    case 'buffering':
+      el.innerHTML = '<span class="status-indicator status-buffering"><span class="status-dot"></span><span class="status-text">Recording speech... ' + (bufferSec || 0) + 's</span></span>';
+      break;
+    case 'analyzing':
+      el.innerHTML = '<span class="status-indicator status-analyzing"><span class="status-dot"></span><span class="status-text">Analyzing...</span></span>';
+      break;
+    case 'listening':
+    default:
+      el.innerHTML = '<span class="status-indicator status-listening"><span class="status-dot"></span><span class="status-text">Listening...</span></span>';
+      break;
+  }
+}
 
 async function startMic() {
   const liveBar = document.getElementById('live-bar');
@@ -614,7 +677,7 @@ async function startMic() {
     _micWs.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.error) { console.error('WS error:', data.error); return; }
-      if (data.type === 'ready') { liveEl.textContent = 'Listening...'; return; }
+      if (data.type === 'ready') { _setLiveStatus('listening'); return; }
       if (data.type === 'calibrating') {
         liveEl.textContent = 'Calibrating... (2s)';
         document.getElementById('cal-btn').textContent = '...';
@@ -623,17 +686,29 @@ async function startMic() {
       if (data.type === 'calibrated') {
         liveEl.textContent = `Calibrated (threshold: ${data.threshold.toFixed(4)})`;
         document.getElementById('cal-btn').textContent = 'Calibrate';
-        setTimeout(() => { if (isRecording) liveEl.textContent = 'Listening...'; }, 1500);
+        setTimeout(() => { if (isRecording) _setLiveStatus('listening'); }, 1500);
+        return;
+      }
+      if (data.type === 'status') {
+        _chunkCount = data.chunks || _chunkCount;
+        if (data.state === 'buffering') {
+          _setLiveStatus('buffering', data.buffer_sec);
+        } else if (data.state === 'analyzing') {
+          _setLiveStatus('analyzing');
+        } else if (data.state === 'done') {
+          _setLiveStatus('listening');
+        }
         return;
       }
       if (data.type === 'transcript' && data.utterance) {
-        liveEl.textContent = `[${data.utterance.speaker}] ${data.utterance.text}`;
+        liveEl.innerHTML = `<span style="color:var(--text)">[${esc(data.utterance.speaker)}] ${esc(data.utterance.text)}</span>`;
         appendUtterance(data.utterance);
-        setTimeout(() => { if (isRecording) liveEl.textContent = 'Listening...'; }, 2000);
       }
       if (data.type === 'analysis') {
         if (data.topics) renderTopics(data.topics);
+        if (data.issues) renderIssues(data.issues);
         if (data.interventions) renderNewInterventions(data.interventions);
+        if (data.references) renderReferences(data.references);
         if (data.corrections) applyCorrections(data.corrections);
       }
     };
@@ -685,7 +760,8 @@ async function startMic() {
     _vizLoop();
 
     liveBar.style.display = 'flex';
-    liveEl.textContent = 'Connecting...';
+    _chunkCount = 0;
+    _setLiveStatus('listening');
     isRecording = true;
     updateRecordingUI();
     if (!meetingActive) startMeeting();
@@ -707,6 +783,8 @@ function stopMic() {
 
   document.getElementById('mic-level-bar').style.width = '0%';
   document.getElementById('silence-indicator').style.display = 'none';
+  document.getElementById('chunk-counter').style.display = 'none';
+  _chunkCount = 0;
   isRecording = false;
   if (meetingActive) {
     document.getElementById('live-bar').style.display = 'flex';
@@ -1038,7 +1116,7 @@ async function loadModels() {
       for (const m of models) {
         const opt = document.createElement('option');
         opt.value = JSON.stringify({provider, model: m});
-        opt.textContent = provider === 'ollama' ? `${m} (ollama)` : m;
+        opt.textContent = provider === 'ollama' ? `${m} (ollama)` : provider === 'bonsai' ? `${m} (bonsai)` : m;
         if (provider === active.provider && m === active.model) opt.selected = true;
         sel.appendChild(opt);
       }
@@ -1115,7 +1193,60 @@ async function loadMeeting(id) {
   } catch(e) {}
 }
 
+// ── Log Panel + /ws/updates ──
+let _updatesWs = null;
+const MAX_LOG_ENTRIES = 300;
+
+function connectUpdates() {
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  _updatesWs = new WebSocket(`${wsProto}//${location.host}/ws/updates`);
+  _updatesWs.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'log') appendLog(data);
+    } catch(err) {}
+  };
+  _updatesWs.onclose = () => { setTimeout(connectUpdates, 3000); };
+  _updatesWs.onerror = () => {};
+}
+
+function toggleLogPanel() {
+  const panel = document.getElementById('log-panel');
+  panel.classList.toggle('expanded');
+  if (panel.classList.contains('expanded')) {
+    document.getElementById('log-new-dot').classList.remove('active');
+    const body = document.getElementById('log-body');
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
+function appendLog(data) {
+  const body = document.getElementById('log-body');
+  const counter = document.getElementById('log-count');
+  const dot = document.getElementById('log-new-dot');
+  const panel = document.getElementById('log-panel');
+
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + (data.level || 'info');
+  entry.textContent = data.message;
+  body.appendChild(entry);
+
+  while (body.children.length > MAX_LOG_ENTRIES) body.removeChild(body.firstChild);
+  counter.textContent = body.children.length;
+
+  // 패널이 닫혀있으면 새 로그 dot 표시
+  if (!panel.classList.contains('expanded')) {
+    dot.classList.add('active');
+  }
+
+  // 스크롤이 하단 근처면 자동 스크롤
+  if (body.scrollHeight - body.scrollTop - body.clientHeight < 60) {
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
 // Init
+connectUpdates();
 loadModels();
 loadHistory();
 refreshState();

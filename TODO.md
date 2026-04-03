@@ -2,6 +2,93 @@
 
 ---
 
+## [DONE] 18. 실시간 녹음 중 진행 상황 UX 개선
+
+**문제**: 오디오 청크 처리 시 UI에 진행 상황이 표시되지 않아 버그인지 정상 동작인지 알 수 없었음.
+
+**구현 내용**:
+
+### 서버 (`api/websocket.py`)
+- 매 청크 처리 후 `{"type": "status"}` 메시지를 클라이언트에 push:
+  - `state: "buffering"` — 음성 감지됨, 오디오 버퍼 축적 중 (`buffer_sec` 포함)
+  - `state: "analyzing"` — STT 완료, 파이프라인 분석 진행 중
+  - `state: "done"` — 분석 완료, 다시 대기 상태
+  - `chunks` — 서버가 수신한 총 청크 수 (연결 생존 증명)
+
+### 클라이언트 (`static/index.html`)
+- live-bar에 3단계 상태 표시:
+  - **Listening...** (회색 dot) — 대기 중
+  - **Recording speech... Xs** (녹색 dot, 펄스) — 음성 감지, 버퍼 축적
+  - **Analyzing...** (주황 dot, 펄스) — 파이프라인 분석 중
+- **chunk counter** — "N chunks" 표시로 서버와 데이터 흐르고 있음을 시각적 확인
+
+**관련 파일**: `api/websocket.py`, `static/index.html`
+
+---
+
+## [DONE] 19. 웹검색/alert가 녹음 중단 후에만 표시되는 이슈 수정
+
+**문제**: 실시간 녹음 중 웹검색 결과와 개입 알림이 UI에 표시되지 않고, 녹음을 중단해야 `refreshState()`로 한번에 보였음.
+
+**원인**: `/ws/audio`의 `_bg_analysis`가 `analysis` 메시지에 `topics`와 `interventions`만 포함하고 `issues`와 `references`를 누락. 클라이언트도 `analysis` 메시지에서 이 두 필드를 렌더하지 않았음.
+
+**수정**:
+- 서버: `_bg_analysis`의 `analysis` 메시지에 `issues`와 `references[-5:]` 추가
+- 클라이언트: `analysis` 메시지 핸들러에서 `renderIssues(data.issues)`, `renderReferences(data.references)` 호출 추가
+
+**관련 파일**: `api/websocket.py`, `static/index.html`
+
+---
+
+## [DONE] 20. 청크 사이즈 증가 시 화자 분리 가능 여부 조사
+
+**결론**: 청크 사이즈를 늘릴 필요 없음.
+
+**조사 결과**:
+- 현재 구조에서 실시간 경로는 이미 0.5초 청크를 버퍼에 축적 후 침묵 1.2초 감지 시 한번에 whisper로 전달. 실제 whisper가 처리하는 단위는 수 초 분량의 축적된 오디오.
+- **핵심 문제는 청크 사이즈가 아니라 실시간 경로의 화자 식별 방식**:
+  - 파일 업로드(`transcribe_file`): whisper 세그먼트별로 오디오 구간을 잘라 각각 화자 식별 → 문장별 다른 화자 가능
+  - 실시간(`_process_utterance`): 축적된 전체 오디오로 화자 1번 식별 → 전체가 같은 화자로 처리됨
+- **개선 방향**: `_process_utterance()`를 `transcribe_file()` 방식으로 리팩토링하면 실시간에서도 세그먼트별 화자 분리 가능
+
+**관련 파일**: `stt/whisper_stt.py`
+
+---
+
+## [DONE] 21. 쟁점 구조화 LLM 호출 빈도 줄이기 (배치 사이즈 증가)
+
+**문제**: `IssueStructurer`가 발화 5개(`_BATCH_SIZE=5`)마다 LLM을 호출하여 비용과 지연이 큼.
+
+**수정**:
+- `_BATCH_SIZE = 5` 하드코딩 제거
+- `config.py`에 `issue_batch_size: int = 10` 설정 추가
+- `issues.py`에서 `settings.issue_batch_size` 참조하도록 변경
+- `.env`에서 `MM_ISSUE_BATCH_SIZE=15` 등으로 조절 가능
+
+**관련 파일**: `config.py`, `analysis/issues.py`
+
+---
+
+## [DONE] 22. 서버 로그 실시간 표시 패널
+
+**구현 내용**:
+
+### 서버 (`main.py`)
+- `_WSLogHandler` 커스텀 로깅 핸들러 추가
+- MeetingMind 모듈(pipeline, analysis, stt, search, db, api)의 INFO+ 로그를 WebSocket `manager.broadcast()`로 전달
+- `call_soon_threadsafe` 패턴으로 worker 스레드(whisper `to_thread` 등)에서도 안전하게 전송
+
+### 클라이언트 (`static/index.html`)
+- 화면 하단에 접이식 **Server Logs** 패널 추가 (기본 접힘 32px → 펼침 220px)
+- 로그 레벨별 색상: info=회색, warning=주황, error=빨강
+- 모노스페이스 폰트, 자동 스크롤, 최대 300개 유지
+- 패널 닫힘 시 새 로그 도착하면 파란 dot 깜빡임으로 알림
+- `/ws/updates` WebSocket 상시 연결 (자동 재연결 3초) — 로그 수신용
+
+**관련 파일**: `main.py`, `static/index.html`
+
+---
+
 ## 15. 토픽 감지 묵음 체크 Dead Code 수정
 
 **현재 문제**: `topic.py`의 stage 1에서 묵음(3초+)을 토픽 전환 후보로 판단하는 로직이 있으나, `_last_silence_ms`가 **항상 0**이라 실제로 작동하지 않음. 파이프라인에서 묵음 시간을 `TopicDetector`에 전달하는 경로가 없음.

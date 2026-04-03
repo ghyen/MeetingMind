@@ -35,7 +35,7 @@ class SimulateRequest(BaseModel):
 
 
 class ModelSelectRequest(BaseModel):
-    provider: str  # "openrouter" | "ollama"
+    provider: str  # "openrouter" | "ollama" | "bonsai"
     model: str
 
 
@@ -252,15 +252,17 @@ async def get_meeting_detail(meeting_id: int):
 @router.get("/models")
 async def list_models():
     """사용 가능한 LLM 모델 목록."""
-    from analysis.llm import get_active_model, list_ollama_models
+    from analysis.llm import get_active_model, list_ollama_models, list_bonsai_models
     from config import settings
 
     ollama_models = await list_ollama_models()
+    bonsai_models = await list_bonsai_models()
     return {
         "active": get_active_model(),
         "providers": {
             "openrouter": [settings.llm_model_fast],
             "ollama": ollama_models,
+            "bonsai": bonsai_models,
         },
     }
 

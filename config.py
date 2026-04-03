@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     topic_silence_threshold_sec: float = 3.0
     topic_keywords: list[str] = ["다음 안건", "그건 그렇고", "자 이제", "넘어가서"]
 
+    # 쟁점 구조화
+    issue_batch_size: int = 10  # N개 발화마다 LLM으로 쟁점 업데이트
+
     # 개입 트리거
     loop_detection_count: int = 3
     long_silence_sec: float = 5.0
@@ -27,10 +30,12 @@ class Settings(BaseSettings):
 
     # LLM
     llm_api_key: str = ""
-    llm_provider: str = "ollama"  # "ollama" | "openrouter"
+    llm_provider: str = "ollama"  # "ollama" | "openrouter" | "bonsai"
     llm_model_fast: str = "qwen3.5:0.8b"
     llm_model_deep: str = "qwen3.5:0.8b"
     ollama_base_url: str = "http://localhost:11434/v1"
+    bonsai_base_url: str = "http://localhost:8080/v1"
+    bonsai_model: str = "bonsai-8b"
 
     # DB
     db_path: str = "data/meetingmind.db"

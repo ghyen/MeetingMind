@@ -103,13 +103,18 @@ async def audio_stream(websocket: WebSocket):
             msg = {
                 "type": "analysis",
                 "topics": _serialize(state.topics),
+                "issues": {str(k): _serialize(v) for k, v in state.issues.items()},
                 "interventions": _serialize(state.latest_interventions),
+                "references": _serialize(state.references[-5:]),
             }
             if state.latest_corrections:
                 msg["corrections"] = _serialize(state.latest_corrections)
             await safe_send(msg)
+            # 분석 완료 알림 → 클라이언트가 "Analyzing..." 해제
+            await safe_send({"type": "status", "state": "done"})
         except Exception as e:
             logger.warning("파이프라인 분석 실패: %s", e)
+            await safe_send({"type": "status", "state": "done"})
 
     try:
         while True:
@@ -138,12 +143,26 @@ async def audio_stream(websocket: WebSocket):
                 utterance = await asyncio.to_thread(whisper.feed_chunk, audio_chunk)
                 if was_calibrating and not whisper._calibrating:
                     await safe_send({"type": "calibrated", "threshold": whisper._vad_threshold})
+
+                # 청크 처리 후 상태 push — 클라이언트가 진행 상황을 알 수 있도록
+                buf_samples = sum(len(b) for b in whisper._buffer)
+                if not utterance and buf_samples > 0:
+                    # 음성 감지됨, 버퍼에 오디오 축적 중
+                    await safe_send({
+                        "type": "status",
+                        "state": "buffering",
+                        "buffer_sec": round(buf_samples / 16000, 1),
+                        "chunks": whisper._chunk_count,
+                    })
+
                 if utterance:
                     logger.info("STT: [%s] %s: %s", utterance.time, utterance.speaker, utterance.text)
                     await safe_send({
                         "type": "transcript",
                         "utterance": _serialize(utterance),
                     })
+                    # 분석 시작 알림 → 클라이언트에서 "Analyzing..." 표시
+                    await safe_send({"type": "status", "state": "analyzing", "chunks": whisper._chunk_count})
                     asyncio.create_task(_bg_analysis(utterance))
             except Exception as e:
                 logger.error("오디오 처리 오류: %s", e)

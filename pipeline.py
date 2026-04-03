@@ -204,7 +204,7 @@ class Pipeline:
         # Ollama는 내부적으로 요청을 직렬 처리하므로 병렬 호출해도 이득이 없음.
         # OpenRouter 등 외부 API는 병렬 호출로 쟁점구조화+자료수집을 동시에 처리.
         from analysis.llm import _active_provider
-        if _active_provider == "ollama":
+        if _active_provider in ("ollama", "bonsai"):
             async with timer.step("트리거감지"):
                 await self._check_triggers(utterance)
             async with timer.step("쟁점구조화"):

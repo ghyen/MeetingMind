@@ -1,6 +1,6 @@
 """쟁점 구조화 — 안건별 논점 그래프 구축.
 
-점진적 업데이트: 발화 3개마다 batch로 delta 반영.
+점진적 업데이트: 발화 N개마다 batch로 delta 반영 (settings.issue_batch_size).
 """
 
 from __future__ import annotations
@@ -10,8 +10,6 @@ import json
 from config import settings
 from models import Topic, Utterance, IssueGraph, Position
 from analysis.llm import ask_json
-
-_BATCH_SIZE = 5
 _MAX_UTTERANCES_IN_PROMPT = 15
 
 _FEW_SHOT_EXAMPLE = """\
@@ -33,8 +31,8 @@ class IssueStructurer:
 
         매 발화마다 LLM을 호출하면 비용과 지연이 크므로 배치 전략 사용:
         - 첫 발화: 즉시 _create_initial()로 초기 구조 생성
-        - 이후: pending 큐에 축적 → 5개 모이면 _apply_delta()로 일괄 반영
-        - pending < 5개: 기존 구조를 그대로 반환 (LLM 호출 안 함)
+        - 이후: pending 큐에 축적 → N개 모이면 _apply_delta()로 일괄 반영
+        - pending < N개: 기존 구조를 그대로 반환 (LLM 호출 안 함)
         """
         existing = self._cache.get(topic.id)
         self._pending.setdefault(topic.id, []).append(new_utterance)
@@ -42,7 +40,7 @@ class IssueStructurer:
         if existing is None:
             issue = await self._create_initial(topic)
             self._pending[topic.id] = []
-        elif len(self._pending[topic.id]) >= _BATCH_SIZE:
+        elif len(self._pending[topic.id]) >= settings.issue_batch_size:
             issue = await self._apply_delta(existing, self._pending[topic.id])
             self._pending[topic.id] = []
         else:

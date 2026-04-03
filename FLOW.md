@@ -56,27 +56,26 @@
 **파일**: `main.py`
 
 ```python
-# main.py:26-32 — FastAPI lifespan으로 앱 시작 시 DB 초기화
+# main.py — FastAPI lifespan으로 앱 시작 시 로그 핸들러 + DB 초기화
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _ws_log_handler.set_loop(asyncio.get_running_loop())  # 로그 → WebSocket 전달 활성화
     Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
     import db
-    await db.init_db()       # SQLite 테이블 자동 생성
+    await db.init_db()
     yield
 
-# main.py:35 — FastAPI 앱 생성
-app = FastAPI(title="MeetingMind", version="0.1.0", lifespan=lifespan)
-
-# main.py:38 — 전역 Pipeline 싱글톤 (모든 요청이 이 인스턴스를 공유)
+# main.py — 전역 Pipeline 싱글톤 (모든 요청이 이 인스턴스를 공유)
 pipeline = Pipeline()
+pipeline.add_listener(_broadcast_event)  # Pipeline 이벤트 → WebSocket broadcast
 
-# main.py:57 — Pipeline 이벤트 → WebSocket broadcast 연결
-pipeline.add_listener(_broadcast_event)
+# main.py — _WSLogHandler: 서버 로그를 WebSocket으로 broadcast (브라우저 로그 패널용)
+# MeetingMind 모듈(pipeline, analysis, stt, search, db, api) INFO+ 로그만 전달
 ```
 
 **설정 로드**: `config.py`
-- `Settings` 클래스가 `.env` 파일에서 `MM_` 접두사 환경변수를 읽어 설정 (`config.py:50`)
-- STT 엔진, VAD 임계값, LLM 프로바이더/모델, DB 경로 등 전부 여기서 관리
+- `Settings` 클래스가 `.env` 파일에서 `MM_` 접두사 환경변수를 읽어 설정
+- STT, VAD, 화자분리, 토픽감지, 개입트리거, LLM, DB, 쟁점배치(`issue_batch_size`) 등 관리
 
 ---
 
@@ -97,13 +96,18 @@ pipeline.add_listener(_broadcast_event)
   │── audio chunk (bytes) ─────────▶│ whisper.feed_chunk(chunk)
   │   (float32 PCM, 0.5초 단위)    │    ↓
   │                                │ RMS 기반 VAD로 음성/침묵 판별
+  │◀── {"type":"status",          │ (음성 감지 시)
+  │     "state":"buffering",       │  buffer_sec, chunks 포함
+  │     "buffer_sec":2.5} ────────│
   │                                │ 침묵 1.2초 이상이면 발화 종료
   │                                │ 축적된 오디오 → whisper 인식
-  │                                │    ↓
   │◀── {"type":"transcript",...} ──│ Utterance 반환
-  │                                │    ↓
+  │◀── {"type":"status",          │
+  │     "state":"analyzing"} ──────│ 분석 시작 알림
   │                                │ pipe.on_utterance() (백그라운드)
-  │◀── {"type":"analysis",...} ────│ 분석 결과 push
+  │◀── {"type":"analysis",...} ────│ topics + issues + interventions + references
+  │◀── {"type":"status",          │
+  │     "state":"done"} ───────────│ 분석 완료 알림
   │                                │
   │── "calibrate" (텍스트) ─────────▶│ 노이즈 캘리브레이션 시작
   │◀── {"type":"calibrated",...} ──│ 2초간 배경 소음 측정 후 완료
@@ -608,6 +612,7 @@ class MeetingState:
     interventions: list[Intervention]     # 전체 개입 히스토리
     latest_interventions: list[Intervention]  # 직전 발화에서 발생한 개입만
     references: list[Reference]           # 수집된 참고 자료 전체
+    latest_corrections: list[Utterance]   # 직전 STT 교정 결과
     current_silence_ms: float             # 현재 연속 무음 시간
 ```
 
@@ -628,7 +633,7 @@ def topic_detector(self):
     return self._topic_detector
 ```
 
-같은 패턴: `issue_structurer`, `trigger_detector`, `entity_extractor`, `reference_collector`
+같은 패턴: `issue_structurer`, `trigger_detector`, `entity_extractor`, `reference_collector`, `stt_corrector`
 
 ---
 
@@ -636,15 +641,18 @@ def topic_detector(self):
 
 **파일**: `static/index.html`
 
-단일 HTML 파일. 3-column 레이아웃:
-- **좌측**: 실시간 트랜스크립트 (발화 목록)
+단일 HTML 파일. 3-column + 하단 로그 패널 레이아웃:
+- **좌측**: 실시간 트랜스크립트 (발화 목록) + live-bar (상태 표시)
 - **중앙**: 토픽 탭 + 쟁점 구조 (IssueGraph 카드)
 - **우측**: 개입 알림 + 참고 자료
+- **하단**: 접이식 Server Logs 패널 (서버 로그 실시간 표시)
 
 **브라우저 → 서버 통신**:
-1. WebSocket `/ws/audio`: 마이크 오디오 스트리밍 (MediaRecorder → AudioWorklet)
+1. WebSocket `/ws/audio`: 마이크 오디오 스트리밍 + 처리 상태(status) 수신
 2. WebSocket `/ws/speaker-id`: Web Speech API 발화 단위로 화자 식별 요청
-3. WebSocket `/ws/updates`: 분석 결과 실시간 수신
+3. WebSocket `/ws/updates`: 서버 로그 + broadcast 이벤트 수신 (상시 연결, 자동 재연결)
 4. REST API: 회의 시작/종료, 히스토리 조회, 파일 업로드
 
 **Dev Panel**: 하단 우측에 시뮬레이션/디버그 패널 (텍스트 발화 입력, 프리셋 시나리오)
+
+**Log Panel**: 화면 하단 접이식 패널. `/ws/updates` WebSocket으로 서버 로그를 실시간 수신하여 표시. `main.py`의 `_WSLogHandler`가 MeetingMind 모듈 로그를 broadcast. 로그 레벨별 색상 구분, 최대 300개 유지, 새 로그 도착 시 알림 dot 표시.

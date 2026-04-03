@@ -1,4 +1,4 @@
-"""LLM 클라이언트 — OpenRouter / Ollama 전환 지원."""
+"""LLM 클라이언트 — OpenRouter / Ollama / Bonsai 전환 지원."""
 
 from __future__ import annotations
 
@@ -21,9 +21,14 @@ _ollama_client = AsyncOpenAI(
     base_url=settings.ollama_base_url,
 )
 
+_bonsai_client = AsyncOpenAI(
+    api_key="bonsai",
+    base_url=settings.bonsai_base_url,
+)
+
 # ── 런타임 상태 ─────────────────────────────────────────
 
-_active_provider: str = settings.llm_provider  # "openrouter" | "ollama"
+_active_provider: str = settings.llm_provider  # "openrouter" | "ollama" | "bonsai"
 _active_model: str = settings.llm_model_fast
 
 
@@ -49,8 +54,23 @@ async def list_ollama_models() -> list[str]:
         return []
 
 
+async def list_bonsai_models() -> list[str]:
+    """Bonsai(llama.cpp/MLX) 서버에서 사용 가능한 모델 목록 조회."""
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{settings.bonsai_base_url}/models", timeout=3)
+            r.raise_for_status()
+            return [m["id"] for m in r.json().get("data", [])]
+    except Exception:
+        return [settings.bonsai_model]
+
+
 def _get_client() -> AsyncOpenAI:
-    return _ollama_client if _active_provider == "ollama" else _openrouter_client
+    if _active_provider == "ollama":
+        return _ollama_client
+    if _active_provider == "bonsai":
+        return _bonsai_client
+    return _openrouter_client
 
 
 # ── 공용 호출 함수 ──────────────────────────────────────
@@ -72,17 +92,30 @@ async def _ask_ollama(prompt: str, model: str) -> str:
         return r.json()["message"]["content"]
 
 
+async def _ask_bonsai(prompt: str, model: str) -> str:
+    """Bonsai(llama.cpp/MLX) 서버 OpenAI 호환 API 호출."""
+    client = _bonsai_client
+    response = await client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt + "\n\nRespond ONLY with a valid JSON object. No extra text."}],
+        temperature=0.6,
+    )
+    return response.choices[0].message.content
+
+
 async def ask_json(prompt: str, *, model: str | None = None) -> dict:
     """LLM 호출 → JSON dict 반환.
 
     모든 분석 모듈(토픽 감지, 쟁점 구조화, 엔티티 추출)이 이 함수를 통해 LLM에 접근.
-    프로바이더에 따라 Ollama 네이티브 API 또는 OpenAI 호환 API를 사용.
+    프로바이더에 따라 Ollama 네이티브 API, Bonsai 서버, 또는 OpenAI 호환 API를 사용.
     응답에서 마크다운 코드블록(```json ... ```)을 제거한 뒤 JSON 파싱.
     """
     use_model = model or _active_model
 
     if _active_provider == "ollama":
         text = await _ask_ollama(prompt, use_model)
+    elif _active_provider == "bonsai":
+        text = await _ask_bonsai(prompt, use_model)
     else:
         client = _get_client()
         response = await client.chat.completions.create(
