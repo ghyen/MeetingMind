@@ -63,6 +63,7 @@ async def audio_stream(websocket: WebSocket):
     서버 → 클라이언트: {"type":"transcript", ...} + {"type":"analysis", ...}
     """
     import asyncio
+    from config import settings
     from stt.factory import get_realtime_stt
 
     pipe = _get_pipeline()
@@ -292,3 +293,4 @@ async def updates_stream(websocket: WebSocket):
             await websocket.receive_text()  # keepalive
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+)

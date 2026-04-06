@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     # STT
     stt_language: str = "ko"
     stt_model_size: str = "small"
+    stt_realtime_engine: str = "faster_whisper"  # "faster_whisper" | "whisper_cpp"
     stt_file_engine: str = "faster_whisper"  # "faster_whisper" | "whisper_cpp"
     whisper_cpp_model_path: str = "~/Documents/MeetingMind/models/whisper-cpp/ggml-small.bin"
 
