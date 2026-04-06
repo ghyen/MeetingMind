@@ -119,7 +119,7 @@ async def upload_audio(file: UploadFile):
 
     # faster-whisper로 배치 STT + 화자 식별
     async with timer.step("Whisper STT"):
-        whisper = WhisperFileSTT()
+        whisper = get_file_stt(settings.stt_file_engine)
         try:
             utterances = await asyncio.to_thread(whisper.transcribe_file, data)
         except Exception as e:
