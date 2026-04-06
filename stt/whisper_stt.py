@@ -46,8 +46,10 @@ class WhisperSTT:
         self._vad_threshold: float = 0.02  # 기본값 (캘리브레이션 전)
         self._vad_multiplier: float = 3.0
 
-    def load_model(self, model_size: str = "large-v3") -> None:
+    def load_model(self, model_size: str | None = None) -> None:
         from faster_whisper import WhisperModel
+
+        model_size = model_size or settings.stt_model_size
 
         self._model = WhisperModel(
             model_size,
