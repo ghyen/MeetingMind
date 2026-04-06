@@ -292,4 +292,3 @@ async def updates_stream(websocket: WebSocket):
             await websocket.receive_text()  # keepalive
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-et)

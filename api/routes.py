@@ -8,6 +8,7 @@ from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
 import db
+from config import settings
 
 router = APIRouter(prefix="/api")
 
@@ -95,7 +96,7 @@ async def upload_audio(file: UploadFile):
     import logging
     import time
     from audio_converter import convert_bytes
-    from stt.whisper_stt import WhisperFileSTT
+    from stt.factory import get_file_stt
     from pipeline import _StepTimer
 
     upload_logger = logging.getLogger(__name__)
