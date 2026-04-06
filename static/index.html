@@ -25,34 +25,62 @@
   --speaker-d: #c084fc;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; }
 
-/* ── Header ── */
-.header { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.header-left { display: flex; align-items: center; gap: 12px; }
+/* ── App Layout ── */
+.app-layout { display: flex; width: 100%; height: 100vh; }
+
+/* ── Left Sidebar ── */
+.sidebar { width: 280px; min-width: 280px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+.sidebar-header { padding: 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
 .logo { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
 .logo span { color: var(--accent); }
-.header-center { display: flex; align-items: center; gap: 12px; }
+.btn-new { background: var(--accent2); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+.btn-new:hover { background: var(--accent); }
+.sidebar-body { flex: 1; overflow-y: auto; padding: 8px; }
+.sidebar-body::-webkit-scrollbar { width: 4px; }
+.sidebar-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.meeting-item { padding: 12px 14px; border-radius: 8px; cursor: pointer; transition: all 0.15s; margin-bottom: 2px; }
+.meeting-item:hover { background: var(--surface2); }
+.meeting-item.active { background: var(--accent2); color: #fff; }
+.meeting-item .mi-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meeting-item .mi-meta { font-size: 11px; color: var(--text3); margin-top: 3px; display: flex; gap: 8px; }
+.meeting-item.active .mi-meta { color: rgba(255,255,255,0.7); }
+.meeting-item .mi-live { color: var(--green); font-weight: 600; font-size: 11px; }
+.meeting-item.active .mi-live { color: #fff; }
+.sidebar-empty { text-align: center; padding: 40px 16px; color: var(--text3); font-size: 13px; }
+
+/* ── Main Content ── */
+.main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── Top Bar ── */
+.top-bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; }
+.top-bar-left { display: flex; align-items: center; gap: 12px; }
 .meeting-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); }
 .meeting-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); }
 .meeting-status .dot.active { background: var(--green); animation: blink 2s infinite; }
 .meeting-status .dot.recording { background: var(--red); animation: blink 1s infinite; }
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 .meeting-timer { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
-.header-actions { display: flex; gap: 8px; align-items: center; }
-.header-select { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 12px; cursor: pointer; }
-.header-select:focus { border-color: var(--accent); outline: none; }
-/* Record button */
-.rec-btn { display: flex; align-items: center; gap: 6px; padding: 8px 18px; border-radius: 20px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.rec-btn.ready { background: var(--accent2); color: #fff; }
-.rec-btn.ready:hover { background: var(--accent); transform: scale(1.02); }
-.rec-btn.recording { background: var(--red); color: #fff; animation: rec-pulse 1.5s infinite; }
-.rec-btn.recording:hover { background: #ef4444; }
-.rec-btn .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-.rec-btn.recording .rec-dot { animation: blink 1s infinite; }
-@keyframes rec-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.3); } 50% { box-shadow: 0 0 0 8px rgba(248,113,113,0); } }
+.top-bar-right { display: flex; gap: 8px; align-items: center; }
 .model-select { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 12px; cursor: pointer; max-width: 180px; }
 .model-select:focus { border-color: var(--accent); outline: none; }
+
+/* ── Control Buttons ── */
+.controls-bar { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 16px 20px; background: var(--bg); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ctrl-btn { border: none; border-radius: 14px; padding: 14px 36px; font-size: 16px; font-weight: 700; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 10px; letter-spacing: 0.3px; }
+.ctrl-btn:hover { transform: scale(1.03); }
+.ctrl-btn:active { transform: scale(0.98); }
+.ctrl-start { background: var(--green); color: #000; }
+.ctrl-start:hover { background: #4ade80; box-shadow: 0 0 20px rgba(52,211,153,0.3); }
+.ctrl-pause { background: var(--orange); color: #000; }
+.ctrl-pause:hover { background: #fbbf24; box-shadow: 0 0 20px rgba(251,146,60,0.3); }
+.ctrl-resume { background: var(--accent2); color: #fff; }
+.ctrl-resume:hover { background: var(--accent); box-shadow: 0 0 20px rgba(108,138,255,0.3); }
+.ctrl-end { background: var(--red); color: #fff; }
+.ctrl-end:hover { background: #ef4444; box-shadow: 0 0 20px rgba(248,113,113,0.3); }
+.ctrl-calibrate { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); padding: 12px 20px; font-size: 13px; font-weight: 500; }
+.ctrl-calibrate:hover { color: var(--text); background: var(--border); }
 
 /* ── Buttons ── */
 .btn { border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
@@ -65,15 +93,8 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .btn-icon { width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--text2); cursor: pointer; font-size: 15px; transition: all 0.15s; }
 .btn-icon:hover { background: var(--border); color: var(--text); }
 
-/* ── Mic Button ── */
-.mic-btn { width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; }
-.mic-btn.idle { background: var(--accent2); color: #fff; }
-.mic-btn.idle:hover { background: var(--accent); transform: scale(1.05); }
-.mic-btn.recording { background: var(--red); color: #fff; animation: pulse 1.5s infinite; }
-@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.3); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
-
-/* ── Main Layout ── */
-.main { display: grid; grid-template-columns: 340px 1fr 300px; flex: 1; overflow: hidden; }
+/* ── Main 3-column Layout ── */
+.panels { display: grid; grid-template-columns: 340px 1fr 300px; flex: 1; overflow: hidden; }
 
 /* ── Panel Base ── */
 .panel { display: flex; flex-direction: column; border-right: 1px solid var(--border); overflow: hidden; }
@@ -85,7 +106,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .panel-body::-webkit-scrollbar { width: 4px; }
 .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-/* ── Left: Transcript ── */
+/* ── Transcript ── */
 .transcript-item { display: flex; gap: 10px; padding: 8px 0; position: relative; }
 .transcript-item + .transcript-item { border-top: 1px solid var(--border); }
 .transcript-time { font-size: 11px; color: var(--text3); min-width: 44px; padding-top: 2px; font-variant-numeric: tabular-nums; }
@@ -192,18 +213,6 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .chat-bar button:hover { background: var(--accent); transform: scale(1.05); }
 .chat-bar button:disabled { background: var(--border); cursor: default; transform: none; }
 
-/* ── Modal ── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
-.modal-overlay.open { opacity: 1; pointer-events: auto; }
-.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
-.modal h2 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
-.modal label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-.modal input, .modal textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 8px 12px; font-size: 13px; font-family: inherit; margin-bottom: 12px; }
-.modal input:focus, .modal textarea:focus { border-color: var(--accent); outline: none; }
-.modal textarea { resize: vertical; min-height: 60px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.modal .hint { font-size: 11px; color: var(--text3); margin-top: -8px; margin-bottom: 12px; }
-
 /* ── Log Panel ── */
 .log-panel { flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--border); height: 32px; overflow: hidden; transition: height 0.2s ease; }
 .log-panel.expanded { height: 220px; display: flex; flex-direction: column; }
@@ -230,110 +239,125 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .toast .toast-type { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; margin-bottom: 2px; }
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes fadeOut { to { opacity: 0; transform: translateY(-10px); } }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.3); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
 </style>
 </head>
 <body>
 
-<!-- Header -->
-<div class="header">
-  <div class="header-left">
-    <div class="logo">Meeting<span>Mind</span></div>
-    <select id="history-select" class="header-select" style="max-width:240px;" onchange="loadMeeting(this.value)">
-      <option value="new">+ New Meeting</option>
-    </select>
-  </div>
-  <div class="header-center">
-    <div class="meeting-status">
-      <div id="status-dot" class="dot"></div>
-      <span id="meeting-label">Ready</span>
-      <span id="meeting-timer" class="meeting-timer"></span>
-    </div>
-    <button id="rec-btn" class="rec-btn ready" onclick="toggleRecording()">
-      <span class="rec-dot"></span>
-      <span id="rec-label">Start Recording</span>
-    </button>
-    <button id="cal-btn" class="btn btn-ghost" onclick="calibrateNoise()" title="2초간 배경 소음 측정">Calibrate</button>
-    <button id="end-btn" class="btn btn-danger" onclick="endMeeting()" style="display:none;">End</button>
-  </div>
-  <div class="header-actions">
-    <select id="model-select" class="model-select" onchange="changeModel(this)"></select>
-    <button class="btn-icon" onclick="toggleDev()" title="Developer tools">&#x2699;</button>
-  </div>
-</div>
-
 <!-- Toast Container -->
 <div id="toast-container" class="toast-container"></div>
 
-<!-- Main 3-column layout -->
-<div class="main">
+<div class="app-layout">
 
-  <!-- Left: Transcript -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Transcript</span>
-      <span id="utt-count" class="panel-badge">0</span>
-    </div>
-    <div id="utterances" class="panel-body">
-      <div class="empty-state"><div class="icon">&#x1F399;</div>Waiting for input...</div>
-    </div>
-    <div id="live-bar" class="live-bar" style="display:none;">
-      <span id="live-icon" style="font-size:14px;">&#x1F3A4;</span>
-      <div class="mic-level"><div id="mic-level-bar" class="mic-level-bar"></div></div>
-      <span id="live-transcript">Listening...</span>
-      <span id="chunk-counter" class="status-meta" style="display:none;"></span>
-      <div id="silence-indicator" class="silence-indicator" style="display:none;">
-        <div id="silence-bar" class="silence-bar"></div>
-        <span id="silence-label" class="silence-label"></span>
+<!-- Left Sidebar: Meeting History -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">Meeting<span>Mind</span></div>
+    <button class="btn-new" onclick="newMeeting()">+ New</button>
+  </div>
+  <div id="meeting-list" class="sidebar-body">
+    <div class="sidebar-empty">No meetings yet</div>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="main-content">
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <div class="meeting-status">
+        <div id="status-dot" class="dot"></div>
+        <span id="meeting-label">Ready</span>
+        <span id="meeting-timer" class="meeting-timer"></span>
       </div>
     </div>
-    <div class="chat-bar">
-      <input id="chat-input" type="text" placeholder="Type a message as Speaker 1..." autocomplete="off">
-      <button id="chat-send" onclick="sendChat()">&#x27A4;</button>
+    <div class="top-bar-right">
+      <select id="model-select" class="model-select" onchange="changeModel(this)"></select>
+      <button class="btn-icon" onclick="toggleDev()" title="Developer tools">&#x2699;</button>
     </div>
   </div>
 
-  <!-- Center: Topics & Issues -->
-  <div class="panel" style="border-right: 1px solid var(--border);">
-    <div class="panel-header">
-      <span class="panel-title">Topics & Issues</span>
-      <span id="topic-count" class="panel-badge">0</span>
-    </div>
-    <div id="topic-tabs" class="topic-tab-bar"></div>
-    <div id="center-body" class="panel-body">
-      <div class="empty-state"><div class="icon">&#x1F4CB;</div>Topics will appear as the conversation progresses</div>
-    </div>
+  <!-- Meeting Controls -->
+  <div id="controls-bar" class="controls-bar">
+    <button id="start-btn" class="ctrl-btn ctrl-start" onclick="startNewMeeting()">&#9654; Start Meeting</button>
+    <button id="pause-btn" class="ctrl-btn ctrl-pause" onclick="pauseMeeting()" style="display:none;">&#x23F8; Pause</button>
+    <button id="resume-btn" class="ctrl-btn ctrl-resume" onclick="resumeMeeting()" style="display:none;">&#9654; Resume</button>
+    <button id="end-btn" class="ctrl-btn ctrl-end" onclick="endMeeting()" style="display:none;">&#x23F9; End Meeting</button>
+    <button id="cal-btn" class="ctrl-btn ctrl-calibrate" onclick="calibrateNoise()" style="display:none;">Calibrate</button>
   </div>
 
-  <!-- Right: Alerts & References -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Alerts</span>
-      <span id="inv-count" class="panel-badge">0</span>
-    </div>
-    <div id="right-body" class="panel-body">
-      <div id="interventions"></div>
-      <div id="ref-section" style="display:none;">
-        <div class="section-divider">References</div>
-        <div id="references"></div>
+  <!-- 3-column layout -->
+  <div class="panels">
+
+    <!-- Left: Transcript -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Transcript</span>
+        <span id="utt-count" class="panel-badge">0</span>
       </div>
-      <div id="alerts-empty" class="empty-state"><div class="icon">&#x1F514;</div>No alerts yet</div>
+      <div id="utterances" class="panel-body">
+        <div class="empty-state"><div class="icon">&#x1F399;</div>Waiting for input...</div>
+      </div>
+      <div id="live-bar" class="live-bar" style="display:none;">
+        <span id="live-icon" style="font-size:14px;">&#x1F3A4;</span>
+        <div class="mic-level"><div id="mic-level-bar" class="mic-level-bar"></div></div>
+        <span id="live-transcript">Listening...</span>
+        <span id="chunk-counter" class="status-meta" style="display:none;"></span>
+        <div id="silence-indicator" class="silence-indicator" style="display:none;">
+          <div id="silence-bar" class="silence-bar"></div>
+          <span id="silence-label" class="silence-label"></span>
+        </div>
+      </div>
+      <div class="chat-bar">
+        <input id="chat-input" type="text" placeholder="Type a message as Speaker 1..." autocomplete="off">
+        <button id="chat-send" onclick="sendChat()">&#x27A4;</button>
+      </div>
     </div>
+
+    <!-- Center: Topics & Issues -->
+    <div class="panel" style="border-right: 1px solid var(--border);">
+      <div class="panel-header">
+        <span class="panel-title">Topics & Issues</span>
+        <span id="topic-count" class="panel-badge">0</span>
+      </div>
+      <div id="topic-tabs" class="topic-tab-bar"></div>
+      <div id="center-body" class="panel-body">
+        <div class="empty-state"><div class="icon">&#x1F4CB;</div>Topics will appear as the conversation progresses</div>
+      </div>
+    </div>
+
+    <!-- Right: Alerts & References -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Alerts</span>
+        <span id="inv-count" class="panel-badge">0</span>
+      </div>
+      <div id="right-body" class="panel-body">
+        <div id="interventions"></div>
+        <div id="ref-section" style="display:none;">
+          <div class="section-divider">References</div>
+          <div id="references"></div>
+        </div>
+        <div id="alerts-empty" class="empty-state"><div class="icon">&#x1F514;</div>No alerts yet</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Log Panel -->
+  <div id="log-panel" class="log-panel">
+    <div class="log-header" onclick="toggleLogPanel()">
+      <span>Server Logs</span>
+      <span id="log-new-dot" class="log-new-dot"></span>
+      <span id="log-count" class="panel-badge">0</span>
+      <span class="log-toggle">&#x25B2;</span>
+    </div>
+    <div id="log-body" class="log-body"></div>
   </div>
 
 </div>
-
-<!-- Log Panel -->
-<div id="log-panel" class="log-panel">
-  <div class="log-header" onclick="toggleLogPanel()">
-    <span>Server Logs</span>
-    <span id="log-new-dot" class="log-new-dot"></span>
-    <span id="log-count" class="panel-badge">0</span>
-    <span class="log-toggle">&#x25B2;</span>
-  </div>
-  <div id="log-body" class="log-body"></div>
 </div>
-
-<!-- Dev Panel Toggle (in header) -->
 
 <!-- Dev Panel -->
 <div id="dev-panel" class="dev-panel">
@@ -365,22 +389,6 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
   <div id="dev-status" class="dev-status"></div>
 </div>
 
-<!-- Meeting Context Modal -->
-<div id="meeting-modal" class="modal-overlay">
-  <div class="modal">
-    <h2>Meeting Info</h2>
-    <label for="modal-company">Company</label>
-    <input id="modal-company" type="text" placeholder="e.g. Anthropic">
-    <label for="modal-desc">Meeting Description</label>
-    <textarea id="modal-desc" rows="3" placeholder="e.g. Q1 마케팅 예산 검토 회의"></textarea>
-    <div class="hint">STT 교정 시 회의 맥락에 맞는 용어로 보정합니다</div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal()">Skip</button>
-      <button class="btn btn-primary" onclick="confirmModal()">Start</button>
-    </div>
-  </div>
-</div>
-
 <script>
 const API = '';
 const SPEAKER_COLORS = { A: 'speaker-a', B: 'speaker-b', C: 'speaker-c', D: 'speaker-d' };
@@ -397,91 +405,74 @@ let isRecording = false;
 let meetingStartTime = null;
 let timerInterval = null;
 let viewingHistory = false;
+let selectedMeetingId = null;
 
-// ── Recording (unified mic + meeting start) ──
-async function toggleRecording() {
-  if (isRecording) {
-    stopMic();
-  } else if (meetingActive) {
-    startMic();
-  } else {
-    // 새 회의 — 모달로 회의 정보 입력
-    if (viewingHistory) {
-      viewingHistory = false;
-      uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
-    }
-    openModal();
-  }
-}
-
-function openModal() {
-  document.getElementById('meeting-modal').classList.add('open');
-  document.getElementById('modal-company').focus();
-}
-function closeModal() {
-  document.getElementById('meeting-modal').classList.remove('open');
-  // Skip → 빈 컨텍스트로 시작
-  _startWithContext('', '');
-}
-async function confirmModal() {
-  const company = document.getElementById('modal-company').value.trim();
-  const desc = document.getElementById('modal-desc').value.trim();
-  document.getElementById('meeting-modal').classList.remove('open');
-  await _startWithContext(company, desc);
-}
-async function _startWithContext(company, description) {
-  await startMeeting(company, description);
-  startMic();
-}
-
-// modal Enter/Escape
-document.addEventListener('keydown', e => {
-  const modal = document.getElementById('meeting-modal');
-  if (!modal.classList.contains('open')) return;
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmModal(); }
-  if (e.key === 'Escape') { closeModal(); }
-});
-
-function updateRecordingUI() {
-  const btn = document.getElementById('rec-btn');
-  const label = document.getElementById('rec-label');
+// ── Control Buttons ──
+function updateControlButtons() {
+  const startBtn = document.getElementById('start-btn');
+  const pauseBtn = document.getElementById('pause-btn');
+  const resumeBtn = document.getElementById('resume-btn');
   const endBtn = document.getElementById('end-btn');
   const calBtn = document.getElementById('cal-btn');
   const dot = document.getElementById('status-dot');
-  if (isRecording) {
-    btn.className = 'rec-btn recording';
-    label.textContent = 'Pause';
-    dot.className = 'dot recording';
-    endBtn.style.display = '';
-  } else if (meetingActive) {
-    btn.className = 'rec-btn ready';
-    label.textContent = 'Resume';
-    dot.className = 'dot active';
-    endBtn.style.display = '';
-  } else {
-    btn.className = 'rec-btn ready';
-    label.textContent = 'Start Recording';
+
+  startBtn.style.display = 'none';
+  pauseBtn.style.display = 'none';
+  resumeBtn.style.display = 'none';
+  endBtn.style.display = 'none';
+  calBtn.style.display = 'none';
+
+  if (viewingHistory) {
+    // Viewing history — no controls
     dot.className = 'dot';
-    endBtn.style.display = 'none';
+    return;
+  }
+
+  if (isRecording) {
+    pauseBtn.style.display = '';
+    endBtn.style.display = '';
+    calBtn.style.display = '';
+    dot.className = 'dot recording';
+  } else if (meetingActive) {
+    resumeBtn.style.display = '';
+    endBtn.style.display = '';
+    dot.className = 'dot active';
+  } else {
+    startBtn.style.display = '';
+    dot.className = 'dot';
   }
 }
 
 // ── Meeting lifecycle ──
-async function startMeeting(company, description) {
+async function startNewMeeting() {
+  if (viewingHistory) {
+    viewingHistory = false;
+    uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
+  }
+  await startMeeting();
+  startMic();
+}
+
+async function startMeeting() {
   try {
-    const body = {};
-    if (company) body.company = company;
-    if (description) body.description = description;
-    const res = await fetch(API + '/api/meeting/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const res = await fetch(API + '/api/meeting/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) });
     const data = await res.json();
     meetingActive = true;
     meetingStartTime = Date.now();
     document.getElementById('meeting-label').textContent = 'Meeting #' + data.meeting_id;
     timerInterval = setInterval(updateTimer, 1000);
-    document.getElementById('history-select').value = 'new';
-    updateRecordingUI();
-    loadHistory(); // refresh list
+    selectedMeetingId = null;
+    updateControlButtons();
+    loadHistory();
   } catch(e) { setDevStatus('Error: ' + e.message, 'error'); }
+}
+
+async function pauseMeeting() {
+  stopMic();
+}
+
+async function resumeMeeting() {
+  startMic();
 }
 
 async function endMeeting() {
@@ -496,7 +487,7 @@ async function endMeeting() {
     document.getElementById('meeting-label').textContent = 'Ended';
     document.getElementById('meeting-timer').textContent = '';
     document.getElementById('live-bar').style.display = 'none';
-    updateRecordingUI();
+    updateControlButtons();
     loadHistory();
   } catch(e) {}
 }
@@ -511,7 +502,8 @@ async function resetMeeting() {
   clearInterval(timerInterval);
   uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
   viewingHistory = false;
-  updateRecordingUI();
+  selectedMeetingId = null;
+  updateControlButtons();
   refreshState();
 }
 
@@ -520,6 +512,21 @@ function updateTimer() {
   const sec = Math.floor((Date.now() - meetingStartTime) / 1000);
   const m = Math.floor(sec / 60); const s = sec % 60;
   document.getElementById('meeting-timer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+}
+
+// ── New meeting (sidebar button) ──
+function newMeeting() {
+  viewingHistory = false;
+  meetingActive = false;
+  isRecording = false;
+  selectedMeetingId = null;
+  document.getElementById('meeting-label').textContent = 'Ready';
+  document.getElementById('meeting-timer').textContent = '';
+  clearInterval(timerInterval);
+  uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
+  updateControlButtons();
+  refreshState();
+  renderMeetingList();
 }
 
 // ── Dev panel ──
@@ -554,6 +561,7 @@ async function sendChat() {
       document.getElementById('meeting-label').textContent = 'Meeting';
       meetingStartTime = meetingStartTime || Date.now();
       if (!timerInterval) timerInterval = setInterval(updateTimer, 1000);
+      updateControlButtons();
     }
     renderSimResult(data);
   } catch(e) {}
@@ -586,6 +594,7 @@ async function sendUtterance() {
       document.getElementById('meeting-label').textContent = 'Meeting';
       meetingStartTime = meetingStartTime || Date.now();
       if (!timerInterval) timerInterval = setInterval(updateTimer, 1000);
+      updateControlButtons();
     }
     renderSimResult(data);
   } catch(e) { setDevStatus('Error: ' + e.message, 'error'); }
@@ -763,7 +772,7 @@ async function startMic() {
     _chunkCount = 0;
     _setLiveStatus('listening');
     isRecording = true;
-    updateRecordingUI();
+    updateControlButtons();
     if (!meetingActive) startMeeting();
   } catch(e) {
     console.error('startMic failed:', e);
@@ -792,12 +801,12 @@ function stopMic() {
   } else {
     document.getElementById('live-bar').style.display = 'none';
   }
-  updateRecordingUI();
+  updateControlButtons();
   refreshState();
 }
 
 let _calStream = null, _calCtx = null, _calAnalyser = null, _calRaf = null;
-let calibratedThreshold = 0.02; // 캘리브레이션 결과 (서버 + 클라이언트 공유)
+let calibratedThreshold = 0.02;
 const CAL_DURATION_MS = 2000;
 
 async function calibrateNoise() {
@@ -805,10 +814,10 @@ async function calibrateNoise() {
   const liveEl = document.getElementById('live-transcript');
   const calBtn = document.getElementById('cal-btn');
 
-  calBtn.textContent = '측정 중...';
+  calBtn.textContent = '...';
   calBtn.disabled = true;
   liveBar.style.display = 'flex';
-  liveEl.textContent = 'Calibrating... 조용히 해주세요 (2초)';
+  liveEl.textContent = 'Calibrating... (2s)';
 
   try {
     _calStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -833,10 +842,8 @@ async function calibrateNoise() {
     }
     measure();
 
-    // 2초 대기
     await new Promise(r => setTimeout(r, CAL_DURATION_MS));
 
-    // 결과 계산
     cancelAnimationFrame(_calRaf); _calRaf = null;
     const avgRms = rmsValues.reduce((a, b) => a + b, 0) / rmsValues.length;
     calibratedThreshold = Math.max(avgRms * 3, 0.005);
@@ -852,7 +859,6 @@ async function calibrateNoise() {
     });
     liveEl.textContent = `Calibrated: ${level}`;
 
-    // 서버에도 threshold 전달 (녹음 중이면)
     if (_micWs?.readyState === WebSocket.OPEN) {
       _micWs.send('calibrate:' + calibratedThreshold.toFixed(6));
     }
@@ -860,7 +866,6 @@ async function calibrateNoise() {
   } catch(e) {
     setDevStatus('Calibration failed: ' + e.message, 'error');
   } finally {
-    // 정리
     if (_calStream) { _calStream.getTracks().forEach(t => t.stop()); _calStream = null; }
     if (_calCtx) { _calCtx.close(); _calCtx = null; }
     _calAnalyser = null;
@@ -949,7 +954,6 @@ function appendUtterance(u) {
 }
 
 function applyCorrections(corrections) {
-  // 교정된 발화의 텍스트를 transcript에서 업데이트
   const items = document.querySelectorAll('.transcript-item');
   for (const c of corrections) {
     for (const item of items) {
@@ -1049,7 +1053,6 @@ function renderCenterContent() {
 
 function renderNewInterventions(interventions) {
   for (const inv of interventions) {
-    // 같은 타입+토픽의 중복 알림 방지
     const isDup = allInterventions.some(
       existing => existing.trigger_type === inv.trigger_type && existing.topic_id != null && existing.topic_id === inv.topic_id
     );
@@ -1134,49 +1137,51 @@ async function changeModel(sel) {
   } catch(e) {}
 }
 
-// ── Meeting History ──
+// ── Meeting History (sidebar) ──
+let _meetingsList = [];
+
 async function loadHistory() {
   try {
     const res = await fetch(API + '/api/meetings');
     const data = await res.json();
-    const sel = document.getElementById('history-select');
-    const currentVal = sel.value;
-    sel.innerHTML = '<option value="new">+ New Meeting</option>';
-    for (const m of (data.meetings || [])) {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      const date = m.started_at ? m.started_at.split('T')[0] : '';
-      const time = m.started_at ? m.started_at.split('T')[1]?.substring(0,5) : '';
-      const status = m.ended_at ? '' : ' (live)';
-      opt.textContent = `#${m.id} ${m.title || 'Untitled'} ${date} ${time}${status}`;
-      sel.appendChild(opt);
-    }
+    _meetingsList = data.meetings || [];
+    renderMeetingList();
   } catch(e) {}
 }
 
-async function loadMeeting(id) {
-  if (id === 'new' || !id) {
-    // 새 회의 모드
-    viewingHistory = false;
-    meetingActive = false;
-    isRecording = false;
-    document.getElementById('meeting-label').textContent = 'Ready';
-    document.getElementById('meeting-timer').textContent = '';
-    clearInterval(timerInterval);
-    uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
-    updateRecordingUI();
-    refreshState();
+function renderMeetingList() {
+  const el = document.getElementById('meeting-list');
+  if (!_meetingsList.length) {
+    el.innerHTML = '<div class="sidebar-empty">No meetings yet</div>';
     return;
   }
+  el.innerHTML = _meetingsList.map(m => {
+    const date = m.started_at ? m.started_at.split('T')[0] : '';
+    const time = m.started_at ? m.started_at.split('T')[1]?.substring(0,5) : '';
+    const isLive = !m.ended_at;
+    const isActive = selectedMeetingId == m.id;
+    return `<div class="meeting-item${isActive ? ' active' : ''}" onclick="loadMeeting(${m.id})">
+      <div class="mi-title">${esc(m.title || 'Untitled Meeting')}</div>
+      <div class="mi-meta">
+        <span>${date} ${time}</span>
+        ${isLive ? '<span class="mi-live">LIVE</span>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadMeeting(id) {
+  if (!id) return;
   try {
     const res = await fetch(API + '/api/meetings/' + id);
     const data = await res.json();
     if (data.error) return;
 
     viewingHistory = true;
-    updateRecordingUI();
+    selectedMeetingId = id;
+    updateControlButtons();
+    renderMeetingList();
 
-    // meeting detail → renderFullState 호환 형태로 변환
     const state = {
       utterances: data.utterances || [],
       topics: data.topics || [],
@@ -1186,9 +1191,9 @@ async function loadMeeting(id) {
     };
     renderFullState(state);
 
-    // 헤더 업데이트
     const m = data.meeting || {};
     document.getElementById('meeting-label').textContent = m.title || 'Meeting #' + id;
+    document.getElementById('meeting-timer').textContent = '';
     document.getElementById('status-dot').className = 'dot' + (m.ended_at ? '' : ' active');
   } catch(e) {}
 }
@@ -1234,12 +1239,10 @@ function appendLog(data) {
   while (body.children.length > MAX_LOG_ENTRIES) body.removeChild(body.firstChild);
   counter.textContent = body.children.length;
 
-  // 패널이 닫혀있으면 새 로그 dot 표시
   if (!panel.classList.contains('expanded')) {
     dot.classList.add('active');
   }
 
-  // 스크롤이 하단 근처면 자동 스크롤
   if (body.scrollHeight - body.scrollTop - body.clientHeight < 60) {
     body.scrollTop = body.scrollHeight;
   }
