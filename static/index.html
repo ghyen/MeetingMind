@@ -240,6 +240,74 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes fadeOut { to { opacity: 0; transform: translateY(-10px); } }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.3); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
+
+/* ── Mobile hamburger button ── */
+.hamburger { display: none; width: 34px; height: 34px; padding: 0; border: none; background: var(--surface2); border-radius: 8px; color: var(--text2); cursor: pointer; font-size: 18px; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
+.hamburger:hover { background: var(--border); color: var(--text); }
+
+/* ── Mobile sidebar overlay ── */
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 400; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
+.sidebar-overlay.open { opacity: 1; pointer-events: auto; }
+
+/* ── Mobile bottom tab bar ── */
+.mobile-tabs { display: none; background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; }
+.mobile-tabs-inner { display: flex; }
+.mobile-tab { flex: 1; padding: 10px 0 max(10px, env(safe-area-inset-bottom)); text-align: center; font-size: 11px; font-weight: 600; color: var(--text3); cursor: pointer; transition: all 0.15s; border: none; background: none; position: relative; }
+.mobile-tab.active { color: var(--accent); }
+.mobile-tab.active::after { content: ''; position: absolute; top: 0; left: 25%; right: 25%; height: 2px; background: var(--accent); border-radius: 1px; }
+.mobile-tab .tab-icon { font-size: 18px; display: block; margin-bottom: 2px; }
+.mobile-tab .tab-badge { display: inline-block; background: var(--accent2); color: #fff; font-size: 9px; padding: 1px 5px; border-radius: 8px; margin-left: 2px; vertical-align: top; }
+
+/* ── Mobile Responsive ── */
+@media (max-width: 768px) {
+  body { overflow: hidden; }
+
+  .hamburger { display: flex; }
+
+  /* Sidebar becomes a slide-out drawer */
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 500; transform: translateX(-100%); transition: transform 0.25s ease; width: 300px; min-width: 300px; }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-overlay { display: block; }
+
+  /* Top bar: tighter padding */
+  .top-bar { padding: 8px 12px; gap: 8px; }
+  .top-bar-right .model-select { display: none; }
+  .top-bar-right .btn-icon { display: none; }
+
+  /* Control buttons: smaller on mobile */
+  .controls-bar { padding: 10px 12px; gap: 10px; flex-wrap: wrap; }
+  .ctrl-btn { padding: 12px 20px; font-size: 14px; border-radius: 12px; }
+  .ctrl-calibrate { padding: 10px 14px; font-size: 12px; }
+
+  /* Panels: single column, only show active one */
+  .panels { grid-template-columns: 1fr; }
+  .panels .panel { display: none; border-right: none; }
+  .panels .panel.mobile-active { display: flex; }
+
+  /* Chat bar */
+  .chat-bar { padding: 8px 10px; }
+  .chat-bar input { font-size: 14px; padding: 10px 14px; }
+
+  /* Show bottom tab bar */
+  .mobile-tabs { display: block; }
+
+  /* Log panel: hide on mobile by default */
+  .log-panel { display: none; }
+
+  /* Dev panel: full width on mobile */
+  .dev-panel { left: 8px; right: 8px; width: auto; bottom: 70px; }
+
+  /* Toast: narrower */
+  .toast-container { left: 12px; right: 12px; top: auto; bottom: 70px; }
+  .toast { max-width: 100%; }
+}
+
+/* ── Small mobile (< 400px) ── */
+@media (max-width: 400px) {
+  .ctrl-btn { padding: 10px 16px; font-size: 13px; }
+  .controls-bar { gap: 8px; }
+  .sidebar { width: 85vw; min-width: 85vw; }
+}
 </style>
 </head>
 <body>
@@ -249,11 +317,14 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 
 <div class="app-layout">
 
+<!-- Sidebar Overlay (mobile) -->
+<div id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+
 <!-- Left Sidebar: Meeting History -->
-<div class="sidebar">
+<div id="sidebar" class="sidebar">
   <div class="sidebar-header">
     <div class="logo">Meeting<span>Mind</span></div>
-    <button class="btn-new" onclick="newMeeting()">+ New</button>
+    <button class="btn-new" onclick="newMeeting(); closeSidebar();">+ New</button>
   </div>
   <div id="meeting-list" class="sidebar-body">
     <div class="sidebar-empty">No meetings yet</div>
@@ -266,6 +337,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
   <!-- Top Bar -->
   <div class="top-bar">
     <div class="top-bar-left">
+      <button class="hamburger" onclick="toggleSidebar()">&#x2630;</button>
       <div class="meeting-status">
         <div id="status-dot" class="dot"></div>
         <span id="meeting-label">Ready</span>
@@ -354,6 +426,24 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
       <span class="log-toggle">&#x25B2;</span>
     </div>
     <div id="log-body" class="log-body"></div>
+  </div>
+
+  <!-- Mobile Tab Bar -->
+  <div class="mobile-tabs">
+    <div class="mobile-tabs-inner">
+      <button class="mobile-tab active" data-panel="0" onclick="switchMobileTab(0)">
+        <span class="tab-icon">&#x1F399;</span>
+        Transcript
+      </button>
+      <button class="mobile-tab" data-panel="1" onclick="switchMobileTab(1)">
+        <span class="tab-icon">&#x1F4CB;</span>
+        Topics
+      </button>
+      <button class="mobile-tab" data-panel="2" onclick="switchMobileTab(2)">
+        <span class="tab-icon">&#x1F514;</span>
+        Alerts
+      </button>
+    </div>
   </div>
 
 </div>
@@ -1160,7 +1250,7 @@ function renderMeetingList() {
     const time = m.started_at ? m.started_at.split('T')[1]?.substring(0,5) : '';
     const isLive = !m.ended_at;
     const isActive = selectedMeetingId == m.id;
-    return `<div class="meeting-item${isActive ? ' active' : ''}" onclick="loadMeeting(${m.id})">
+    return `<div class="meeting-item${isActive ? ' active' : ''}" onclick="loadMeeting(${m.id}); closeSidebar();">
       <div class="mi-title">${esc(m.title || 'Untitled Meeting')}</div>
       <div class="mi-meta">
         <span>${date} ${time}</span>
@@ -1248,11 +1338,64 @@ function appendLog(data) {
   }
 }
 
+// ── Mobile: Sidebar toggle ──
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+// ── Mobile: Tab switching ──
+let _mobileActiveTab = 0;
+
+function switchMobileTab(idx) {
+  _mobileActiveTab = idx;
+  const panels = document.querySelectorAll('.panels .panel');
+  panels.forEach((p, i) => p.classList.toggle('mobile-active', i === idx));
+  const tabs = document.querySelectorAll('.mobile-tab');
+  tabs.forEach((t, i) => t.classList.toggle('active', i === idx));
+}
+
+function _initMobile() {
+  // Set first panel as active on mobile
+  const panels = document.querySelectorAll('.panels .panel');
+  if (panels.length) panels[0].classList.add('mobile-active');
+
+  // Update tab badges when counts change
+  const observer = new MutationObserver(() => {
+    const tabs = document.querySelectorAll('.mobile-tab');
+    const uttBadge = document.getElementById('utt-count')?.textContent;
+    const topicBadge = document.getElementById('topic-count')?.textContent;
+    const invBadge = document.getElementById('inv-count')?.textContent;
+    if (tabs[0] && uttBadge && uttBadge !== '0') {
+      tabs[0].querySelector('.tab-badge')?.remove();
+      if (uttBadge !== '0') tabs[0].insertAdjacentHTML('beforeend', `<span class="tab-badge">${uttBadge}</span>`);
+    }
+    if (tabs[1] && topicBadge && topicBadge !== '0') {
+      tabs[1].querySelector('.tab-badge')?.remove();
+      if (topicBadge !== '0') tabs[1].insertAdjacentHTML('beforeend', `<span class="tab-badge">${topicBadge}</span>`);
+    }
+    if (tabs[2] && invBadge && invBadge !== '0') {
+      tabs[2].querySelector('.tab-badge')?.remove();
+      if (invBadge !== '0') tabs[2].insertAdjacentHTML('beforeend', `<span class="tab-badge">${invBadge}</span>`);
+    }
+  });
+  const badges = ['utt-count', 'topic-count', 'inv-count'];
+  badges.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) observer.observe(el, { childList: true, characterData: true, subtree: true });
+  });
+}
+
 // Init
 connectUpdates();
 loadModels();
 loadHistory();
 refreshState();
+_initMobile();
 </script>
 </body>
 </html>
