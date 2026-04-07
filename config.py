@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     llm_model_deep: str = "gemma4:e2b"
     ollama_base_url: str = "http://localhost:11434/v1"
     bonsai_base_url: str = "http://localhost:8080/v1"
-    bonsai_model: str = "bonsai-8b"
+    bonsai_model: str = "gemma4-e2b-mlx"
 
     # DB
     db_path: str = "data/meetingmind.db"
