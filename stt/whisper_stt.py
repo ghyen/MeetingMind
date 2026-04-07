@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import numpy as np
 
@@ -144,7 +145,7 @@ class WhisperSTT:
 
         if self._chunk_count <= 10 or self._chunk_count % 50 == 0:
             buf_sec = sum(len(b) for b in self._buffer) / 16000 if self._buffer else 0
-            logger.debug(
+            logger.info(
                 "chunk#%d rms=%.4f thresh=%.4f speech=%s silence=%dms buf=%.1fs",
                 self._chunk_count, rms, self._vad_threshold, is_speech, self._silence_ms, buf_sec,
             )
@@ -191,6 +192,10 @@ class WhisperSTT:
         1. faster-whisper로 한국어 텍스트 추출 (vad_filter=False: 이미 VAD를 거쳤으므로)
         2. SpeakerIdentifier로 화자 임베딩 비교 → 화자 라벨 부여
         """
+        audio_sec = len(audio) / 16000
+        logger.info("Whisper 처리 시작: 오디오 %.1f초", audio_sec)
+
+        t0 = time.time()
         segments, _ = self._model.transcribe(
             audio,
             language="ko",
@@ -199,17 +204,27 @@ class WhisperSTT:
         )
         texts = [seg.text.strip() for seg in segments if seg.text.strip()]
         text = " ".join(texts)
+        stt_elapsed = time.time() - t0
+
         if not text:
+            logger.info("Whisper 결과 없음 (%.2f초 소요)", stt_elapsed)
             return None
 
         # 화자 식별
+        t1 = time.time()
         if settings.diarization_enabled and len(audio) > 1600:
             speaker = self._speaker_id.identify(audio)
         else:
             speaker = "Speaker 1"
+        spk_elapsed = time.time() - t1
 
         # 타임스탬프 (청크 기반 추정)
         time_str = _format_time(self._chunk_count * settings.audio_chunk_ms / 1000)
+
+        logger.info(
+            "Whisper 완료: [%s] %s: %s (STT %.2f초 + 화자 %.2f초 = 총 %.2f초)",
+            time_str, speaker, text, stt_elapsed, spk_elapsed, stt_elapsed + spk_elapsed,
+        )
 
         return Utterance(
             time=time_str,
