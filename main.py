@@ -23,6 +23,8 @@ from api.websocket import router as ws_router, manager
 from config import settings
 from pipeline import Pipeline
 
+logger = logging.getLogger(__name__)
+
 
 # ── WebSocket 로그 핸들러 — 서버 로그를 브라우저 로그 패널에 실시간 전달 ──
 
@@ -62,6 +64,7 @@ logging.getLogger().addHandler(_ws_log_handler)
 async def lifespan(app: FastAPI):
     _ws_log_handler.set_loop(asyncio.get_running_loop())
     # 시작: DB 초기화
+    logger.info("[STT] Whisper 모델 크기: %s", settings.stt_model_size)
     Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
     import db
     await db.init_db()
