@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # STT
     stt_language: str = "ko"
-    stt_model_size: str = "turbo"
+    stt_model_size: str = "large-v3-turbo"
 
     # VAD
     vad_threshold: float = 0.5
