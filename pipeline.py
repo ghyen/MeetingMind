@@ -325,9 +325,13 @@ class Pipeline:
             entities = await self.entity_extractor.extract(utterance)
             for entity in entities:
                 refs = await self.reference_collector.search(entity)
+                if not refs:
+                    continue
                 self.state.references.extend(refs)
+                # 검색 완료 즉시 UI에 push — on_utterance 전체 완료를 기다리지 않음
+                await self._emit("references", self.state.references[-5:])
                 # DB 저장
-                if self.meeting_id and refs:
+                if self.meeting_id:
                     import db
                     for ref in refs:
                         await db.save_reference(

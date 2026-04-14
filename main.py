@@ -79,7 +79,11 @@ pipeline = Pipeline()
 
 def _serialize(obj):
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        return dataclasses.asdict(obj)
+        return {k: _serialize(v) for k, v in dataclasses.asdict(obj).items()}
+    if isinstance(obj, list):
+        return [_serialize(i) for i in obj]
+    if isinstance(obj, dict):
+        return {k: _serialize(v) for k, v in obj.items()}
     return obj
 
 

@@ -1056,6 +1056,9 @@ async function startMic() {
         if (data.references) renderReferences(data.references);
         if (data.corrections) applyCorrections(data.corrections);
       }
+      if (data.type === 'references') {
+        renderReferences(data.data || []);
+      }
     };
     _micWs.onerror = (e) => console.error('WS error:', e);
     _micWs.onclose = () => { if (_micStream) stopMic(); };
