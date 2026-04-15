@@ -19,15 +19,7 @@ from stt.speaker import SpeakerIdentifier
 
 logger = logging.getLogger(__name__)
 
-_MLX_REPOS: dict[str, str] = {
-    "turbo": "mlx-community/whisper-large-v3-turbo",
-    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
-    "large-v3": "mlx-community/whisper-large-v3-mlx",
-    "medium": "mlx-community/whisper-medium-mlx",
-    "small": "mlx-community/whisper-small-mlx",
-    "base": "mlx-community/whisper-base-mlx",
-    "tiny": "mlx-community/whisper-tiny-mlx",
-}
+_MLX_REPO = "mlx-community/whisper-large-v3-turbo"
 
 
 def _format_time(seconds: float) -> str:
@@ -56,16 +48,15 @@ class WhisperSTT:
         self._vad_threshold: float = 0.02
         self._vad_multiplier: float = 3.0
 
-    def load_model(self, model_size: str | None = None) -> None:
+    def load_model(self) -> None:
         import mlx_whisper
 
-        model_size = model_size or settings.stt_model_size
-        self._mlx_repo = _MLX_REPOS.get(model_size, f"mlx-community/whisper-{model_size}-mlx")
+        self._mlx_repo = _MLX_REPO
 
         # 더미 오디오로 모델 워밍업 (첫 실제 요청 지연 방지)
         dummy = np.zeros(3200, dtype=np.float32)
         mlx_whisper.transcribe(dummy, path_or_hf_repo=self._mlx_repo, language="ko", verbose=False)
-        logger.info("mlx-whisper %s → %s 로드 완료", model_size, self._mlx_repo)
+        logger.info("mlx-whisper 로드 완료: %s", self._mlx_repo)
 
         if settings.diarization_enabled:
             try:
