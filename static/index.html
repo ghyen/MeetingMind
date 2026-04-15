@@ -107,8 +107,6 @@ body {
   color: var(--text3); margin-top: 3px; display: flex; gap: 8px;
 }
 .meeting-item.active .mi-meta { color: rgba(255,255,255,0.7); }
-.meeting-item .mi-live { color: var(--green); font-weight: 600; font-size: 12px; }
-.meeting-item.active .mi-live { color: #fff; }
 .sidebar-empty {
   text-align: center; padding: 48px 20px;
   color: var(--text3); font-size: 14px; letter-spacing: -0.224px;
@@ -1498,13 +1496,11 @@ function renderMeetingList() {
   el.innerHTML = _meetingsList.map(m => {
     const date = m.started_at ? m.started_at.split('T')[0] : '';
     const time = m.started_at ? m.started_at.split('T')[1]?.substring(0,5) : '';
-    const isLive = !m.ended_at;
     const isActive = selectedMeetingId == m.id;
     return `<div class="meeting-item${isActive ? ' active' : ''}" onclick="loadMeeting(${m.id}); closeSidebar();">
       <div class="mi-title">${esc(m.title || 'Untitled Meeting')}</div>
       <div class="mi-meta">
         <span>${date} ${time}</span>
-        ${isLive ? '<span class="mi-live">LIVE</span>' : ''}
       </div>
     </div>`;
   }).join('');
