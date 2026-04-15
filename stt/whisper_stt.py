@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 _MLX_REPOS: dict[str, str] = {
     "turbo": "mlx-community/whisper-large-v3-turbo",
+    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
     "large-v3": "mlx-community/whisper-large-v3-mlx",
     "medium": "mlx-community/whisper-medium-mlx",
     "small": "mlx-community/whisper-small-mlx",
