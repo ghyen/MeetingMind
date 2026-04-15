@@ -153,11 +153,17 @@ class Pipeline:
         return self.meeting_id
 
     async def end_meeting(self) -> dict | None:
-        """회의 종료 → 회의록 요약 생성 → DB에 저장."""
+        """회의 종료 → 제목 생성 + 회의록 요약 생성 → DB에 저장."""
         summary = None
         if self.meeting_id:
             import db
             from analysis.summary import generate_summary
+
+            # 회의 제목 자동 생성 (발화 내용 기반)
+            title = await self._generate_title()
+            if title:
+                await db.update_meeting_title(self.meeting_id, title)
+                logger.info("회의 제목 생성: '%s'", title)
 
             summary = await generate_summary(self.state)
             if summary:
@@ -167,6 +173,26 @@ class Pipeline:
             await db.end_meeting(self.meeting_id)
             logger.info("회의 종료: meeting_id=%d", self.meeting_id)
         return summary
+
+    async def _generate_title(self) -> str | None:
+        """발화 내용에서 회의 제목을 짧게 생성 (10자 이내)."""
+        if not self.state.utterances:
+            return None
+        try:
+            from analysis.llm import ask_json
+            # 최근 발화에서 핵심 주제 추출
+            recent = self.state.utterances[:10] + self.state.utterances[-5:]
+            lines = "\n".join(f"[{u.speaker}] {u.text}" for u in recent)
+            topics = ", ".join(t.title for t in self.state.topics) if self.state.topics else ""
+            data = await ask_json(
+                f"회의 발화:\n{lines}\n\n안건: {topics}\n\n"
+                "이 회의의 제목을 10자 이내 한국어로 생성하세요.\n"
+                '{"title": "회의 제목"}'
+            )
+            return data.get("title", "")[:20] or None
+        except Exception:
+            logger.warning("회의 제목 생성 실패", exc_info=True)
+            return None
 
     async def on_utterance(self, utterance: Utterance) -> None:
         """새 발화 수신 → 전체 파이프라인 트리거.

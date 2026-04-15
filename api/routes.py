@@ -63,13 +63,16 @@ async def start_meeting(req: StartMeetingRequest | None = None):
 
 @router.post("/meeting/end")
 async def end_meeting():
-    """현재 회의 종료 → 회의록 요약 생성."""
+    """현재 회의 종료 → 제목 생성 + 회의록 요약 생성."""
     pipe = _get_pipeline()
     if not pipe.meeting_id:
         return {"error": "진행 중인 회의가 없습니다"}
     meeting_id = pipe.meeting_id
     summary = await pipe.end_meeting()
-    return {"meeting_id": meeting_id, "status": "ended", "summary": summary}
+    # DB에서 생성된 제목 가져오기
+    meeting = await db.get_meeting(meeting_id)
+    title = meeting.get("title") if meeting else None
+    return {"meeting_id": meeting_id, "title": title, "status": "ended", "summary": summary}
 
 
 # ── 실시간 상태 조회 (인메모리) ────────────────────────────

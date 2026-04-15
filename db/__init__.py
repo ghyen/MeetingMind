@@ -103,6 +103,15 @@ async def end_meeting(meeting_id: int) -> None:
         await db.commit()
 
 
+async def update_meeting_title(meeting_id: int, title: str) -> None:
+    async with aiosqlite.connect(settings.db_path) as db:
+        await db.execute(
+            "UPDATE meetings SET title = ? WHERE id = ?",
+            (title, meeting_id),
+        )
+        await db.commit()
+
+
 async def get_meeting(meeting_id: int) -> dict | None:
     async with aiosqlite.connect(settings.db_path) as db:
         db.row_factory = aiosqlite.Row

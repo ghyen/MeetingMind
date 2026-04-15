@@ -814,13 +814,14 @@ async function resumeMeeting() {
 async function endMeeting() {
   try {
     if (isRecording) stopMic();
-    await fetch(API + '/api/meeting/end', { method: 'POST' });
+    const res = await fetch(API + '/api/meeting/end', { method: 'POST' });
+    const data = await res.json();
     meetingActive = false;
     isRecording = false;
     meetingStartTime = null;
     clearInterval(timerInterval);
     timerInterval = null;
-    document.getElementById('meeting-label').textContent = 'Ended';
+    document.getElementById('meeting-label').textContent = data.title || 'Ended';
     document.getElementById('meeting-timer').textContent = '';
     document.getElementById('live-bar').style.display = 'none';
     updateControlButtons();
