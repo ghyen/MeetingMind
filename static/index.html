@@ -596,10 +596,8 @@ body {
 
   <!-- Meeting Controls -->
   <div id="controls-bar" class="controls-bar">
-    <button id="start-btn" class="ctrl-btn ctrl-start" onclick="startNewMeeting()">&#9654; Start Meeting</button>
-    <button id="pause-btn" class="ctrl-btn ctrl-pause" onclick="pauseMeeting()" style="display:none;">&#x23F8; Pause</button>
-    <button id="resume-btn" class="ctrl-btn ctrl-resume" onclick="resumeMeeting()" style="display:none;">&#9654; Resume</button>
-    <button id="end-btn" class="ctrl-btn ctrl-end" onclick="endMeeting()" style="display:none;">&#x23F9; End Meeting</button>
+    <button id="start-btn" class="ctrl-btn ctrl-start" onclick="toggleRecording()">&#9654; Start Recording</button>
+    <button id="end-btn" class="ctrl-btn ctrl-end" onclick="toggleRecording()" style="display:none;">&#x23F9; End</button>
     <button id="cal-btn" class="ctrl-btn ctrl-calibrate" onclick="calibrateNoise()" style="display:none;">Calibrate</button>
   </div>
 
@@ -744,51 +742,51 @@ let selectedMeetingId = null;
 // ── Control Buttons ──
 function updateControlButtons() {
   const startBtn = document.getElementById('start-btn');
-  const pauseBtn = document.getElementById('pause-btn');
-  const resumeBtn = document.getElementById('resume-btn');
   const endBtn = document.getElementById('end-btn');
   const calBtn = document.getElementById('cal-btn');
   const dot = document.getElementById('status-dot');
 
   startBtn.style.display = 'none';
-  pauseBtn.style.display = 'none';
-  resumeBtn.style.display = 'none';
   endBtn.style.display = 'none';
   calBtn.style.display = 'none';
 
   if (viewingHistory) {
-    // Viewing history — no controls
     dot.className = 'dot';
     return;
   }
 
   if (isRecording) {
-    pauseBtn.style.display = '';
     endBtn.style.display = '';
     calBtn.style.display = '';
     dot.className = 'dot recording';
-  } else if (meetingActive) {
-    resumeBtn.style.display = '';
-    endBtn.style.display = '';
-    dot.className = 'dot active';
   } else {
     startBtn.style.display = '';
-    dot.className = 'dot';
+    dot.className = meetingActive ? 'dot active' : 'dot';
   }
 }
 
 // ── Meeting lifecycle ──
-async function startNewMeeting() {
-  if (viewingHistory) {
-    viewingHistory = false;
-    uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
+async function toggleRecording() {
+  if (isRecording) {
+    // End → 마이크 중지 (회의는 유지, 다시 Start로 이어갈 수 있음)
+    stopMic();
+  } else {
+    // Start → 회의가 없으면 새로 시작, 있으면 이어서 녹음
+    if (viewingHistory) {
+      viewingHistory = false;
+      uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
+    }
+    if (!meetingActive) {
+      await startMeeting();
+    }
+    startMic();
   }
-  await startMeeting();
-  startMic();
 }
 
 async function startMeeting() {
   try {
+    // 이전 회의가 있으면 자동 종료 (제목 + 요약 생성)
+    if (meetingActive) await finalizeMeeting();
     const res = await fetch(API + '/api/meeting/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) });
     const data = await res.json();
     meetingActive = true;
@@ -801,17 +799,10 @@ async function startMeeting() {
   } catch(e) { setDevStatus('Error: ' + e.message, 'error'); }
 }
 
-async function pauseMeeting() {
-  stopMic();
-}
-
-async function resumeMeeting() {
-  startMic();
-}
-
-async function endMeeting() {
+async function finalizeMeeting() {
+  // 이전 회의 종료 처리 (제목 + 요약 생성). 새 회의 시작 시 자동 호출.
+  if (!meetingActive) return;
   try {
-    if (isRecording) stopMic();
     const res = await fetch(API + '/api/meeting/end', { method: 'POST' });
     const data = await res.json();
     meetingActive = false;
@@ -819,7 +810,7 @@ async function endMeeting() {
     meetingStartTime = null;
     clearInterval(timerInterval);
     timerInterval = null;
-    document.getElementById('meeting-label').textContent = data.title || 'Ended';
+    document.getElementById('meeting-label').textContent = data.title || 'Ready';
     document.getElementById('meeting-timer').textContent = '';
     document.getElementById('live-bar').style.display = 'none';
     updateControlButtons();
@@ -850,14 +841,14 @@ function updateTimer() {
 }
 
 // ── New meeting (sidebar button) ──
-function newMeeting() {
+async function newMeeting() {
+  if (isRecording) stopMic();
+  // 이전 회의 종료 (제목 + 요약 생성)
+  if (meetingActive) await finalizeMeeting();
   viewingHistory = false;
-  meetingActive = false;
-  isRecording = false;
   selectedMeetingId = null;
   document.getElementById('meeting-label').textContent = 'Ready';
   document.getElementById('meeting-timer').textContent = '';
-  clearInterval(timerInterval);
   uttCount = 0; allInterventions = []; allTopics = []; allIssues = {}; selectedTopicId = null;
   updateControlButtons();
   refreshState();
@@ -1135,7 +1126,7 @@ function stopMic() {
   isRecording = false;
   if (meetingActive) {
     document.getElementById('live-bar').style.display = 'flex';
-    document.getElementById('live-transcript').innerHTML = '<span class="paused-label">Paused</span>';
+    document.getElementById('live-transcript').innerHTML = '<span class="paused-label">Stopped — press Start to resume</span>';
   } else {
     document.getElementById('live-bar').style.display = 'none';
   }
