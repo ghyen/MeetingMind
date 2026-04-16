@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from enum import Enum
 
 from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
@@ -21,6 +22,8 @@ def _serialize(obj):
     """dataclass/enum → dict 재귀 직렬화."""
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return {k: _serialize(v) for k, v in dataclasses.asdict(obj).items()}
+    if isinstance(obj, Enum):
+        return obj.value
     if isinstance(obj, list):
         return [_serialize(i) for i in obj]
     if isinstance(obj, dict):
@@ -81,13 +84,20 @@ async def end_meeting():
 @router.get("/meeting/state")
 async def get_meeting_state():
     """현재 회의 상태 조회 (토픽, 쟁점, 개입 등)."""
-    state = _get_pipeline().state
+    pipe = _get_pipeline()
+    state = pipe.state
+    from config import settings
+    issue_tokens = {}
+    for topic in state.topics:
+        issue_tokens[str(topic.id)] = pipe.issue_structurer.get_pending_tokens(topic.id)
     return {
         "utterances": _serialize(state.utterances),
         "topics": _serialize(state.topics),
         "issues": {str(k): _serialize(v) for k, v in state.issues.items()},
         "interventions": _serialize(state.interventions),
         "references": _serialize(state.references),
+        "issue_tokens": issue_tokens,
+        "issue_token_threshold": settings.issue_token_threshold,
     }
 
 

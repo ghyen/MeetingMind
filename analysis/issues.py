@@ -1,6 +1,6 @@
 """쟁점 구조화 — 안건별 논점 그래프 구축.
 
-점진적 업데이트: 발화 N개마다 batch로 delta 반영 (settings.issue_batch_size).
+점진적 업데이트: 누적 발화 문자 수가 임계치를 넘으면 delta 반영 (settings.issue_token_threshold).
 """
 
 from __future__ import annotations
@@ -25,29 +25,39 @@ class IssueStructurer:
     def __init__(self) -> None:
         self._cache: dict[int, IssueGraph] = {}
         self._pending: dict[int, list[Utterance]] = {}
+        self._pending_tokens: dict[int, int] = {}
 
     async def update(self, topic: Topic, new_utterance: Utterance) -> IssueGraph:
         """새 발화를 반영하여 쟁점 구조 점진적 업데이트.
 
         매 발화마다 LLM을 호출하면 비용과 지연이 크므로 배치 전략 사용:
         - 첫 발화: 즉시 _create_initial()로 초기 구조 생성
-        - 이후: pending 큐에 축적 → N개 모이면 _apply_delta()로 일괄 반영
-        - pending < N개: 기존 구조를 그대로 반환 (LLM 호출 안 함)
+        - 이후: pending 큐에 축적 → 누적 문자 수가 임계치를 넘으면 _apply_delta()로 일괄 반영
+        - 임계치 미만: 기존 구조를 그대로 반환 (LLM 호출 안 함)
         """
         existing = self._cache.get(topic.id)
         self._pending.setdefault(topic.id, []).append(new_utterance)
+        self._pending_tokens[topic.id] = (
+            self._pending_tokens.get(topic.id, 0) + len(new_utterance.text)
+        )
 
         if existing is None:
             issue = await self._create_initial(topic)
             self._pending[topic.id] = []
-        elif len(self._pending[topic.id]) >= settings.issue_batch_size:
+            self._pending_tokens[topic.id] = 0
+        elif self._pending_tokens[topic.id] >= settings.issue_token_threshold:
             issue = await self._apply_delta(existing, self._pending[topic.id])
             self._pending[topic.id] = []
+            self._pending_tokens[topic.id] = 0
         else:
             return existing
 
         self._cache[topic.id] = issue
         return issue
+
+    def get_pending_tokens(self, topic_id: int) -> int:
+        """토픽별 현재 누적 문자 수 반환."""
+        return self._pending_tokens.get(topic_id, 0)
 
     async def _create_initial(self, topic: Topic) -> IssueGraph:
         """토픽의 발화들로 초기 쟁점 구조 생성 (Pro 모델)."""

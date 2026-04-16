@@ -302,6 +302,18 @@ body {
   border-radius: var(--radius); font-size: 14px; font-weight: 600; letter-spacing: -0.224px; color: var(--orange);
 }
 .issue-open { font-size: 12px; letter-spacing: -0.12px; color: var(--text3); margin-top: 8px; line-height: 1.33; }
+.issue-token-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 6px; font-size: 11px; color: var(--text3); letter-spacing: -0.11px;
+}
+.issue-token-track {
+  flex: 1; height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,0.08); overflow: hidden;
+}
+.issue-token-fill {
+  height: 100%; border-radius: 2px;
+  background: var(--accent); transition: width 0.3s ease;
+}
 .empty-state { text-align: center; padding: 48px 24px; color: var(--text3); font-size: 14px; letter-spacing: -0.224px; }
 .empty-state .icon { font-size: 32px; margin-bottom: 10px; opacity: 0.4; }
 
@@ -731,6 +743,8 @@ let uttCount = 0;
 let allInterventions = [];
 let allTopics = [];
 let allIssues = {};
+let issueTokens = {};
+let issueTokenThreshold = 500;
 let selectedTopicId = null;
 let meetingActive = false;
 let isRecording = false;
@@ -1040,6 +1054,8 @@ async function startMic() {
         appendUtterance(data.utterance);
       }
       if (data.type === 'analysis') {
+        if (data.issue_tokens) issueTokens = data.issue_tokens;
+        if (data.issue_token_threshold) issueTokenThreshold = data.issue_token_threshold;
         if (data.topics) renderTopics(data.topics);
         if (data.issues) renderIssues(data.issues);
         if (data.interventions) renderNewInterventions(data.interventions);
@@ -1247,6 +1263,8 @@ async function refreshState() {
 
 // ── Rendering ──
 function renderSimResult(data) {
+  if (data.issue_tokens) issueTokens = data.issue_tokens;
+  if (data.issue_token_threshold) issueTokenThreshold = data.issue_token_threshold;
   appendUtterance(data.utterance);
   renderTopics(data.topics || []);
   renderIssues(data.issues || {});
@@ -1265,6 +1283,8 @@ function renderFullState(data) {
     el.innerHTML = (data.utterances || []).map(u => makeUtteranceHtml(u)).join('');
     el.scrollTop = el.scrollHeight;
   }
+  if (data.issue_tokens) issueTokens = data.issue_tokens;
+  if (data.issue_token_threshold) issueTokenThreshold = data.issue_token_threshold;
   allInterventions = data.interventions || [];
   renderTopics(data.topics || []);
   renderIssues(data.issues || {});
@@ -1350,8 +1370,14 @@ function renderCenterContent() {
   const topic = allTopics.find(t => t.id === selectedTopicId);
   if (!topic) return;
 
+  const pending = issueTokens[String(selectedTopicId)] || 0;
+  const pct = Math.min(100, Math.round(pending / issueTokenThreshold * 100));
   let html = `<div class="topic-section">
-    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;">${topic.start_time} ~ ${topic.end_time || 'ongoing'} &middot; ${(topic.utterances||[]).length} utterances</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">${topic.start_time} ~ ${topic.end_time || 'ongoing'} &middot; ${(topic.utterances||[]).length} utterances</div>
+    <div class="issue-token-bar">
+      <span>구조화 ${pending}/${issueTokenThreshold}</span>
+      <div class="issue-token-track"><div class="issue-token-fill" style="width:${pct}%"></div></div>
+    </div>
   </div>`;
 
   const ig = allIssues[String(selectedTopicId)];
@@ -1400,7 +1426,7 @@ function renderAllInterventions() {
   emptyEl.style.display = 'none';
   el.innerHTML = allInterventions.slice().reverse().map(inv =>
     `<div class="alert-item ${inv.level}">
-      <div class="alert-type">${inv.trigger_type}${inv.topic_id != null ? ' #' + inv.topic_id : ''}</div>
+      <div class="alert-type">${inv.trigger_type}${inv.topic_id != null ? ' #' + inv.topic_id : ''}${inv.time ? ' · ' + inv.time : ''}</div>
       ${esc(inv.message)}
     </div>`
   ).join('');
@@ -1410,7 +1436,7 @@ function showToast(inv) {
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
   toast.className = 'toast ' + inv.level;
-  toast.innerHTML = `<div class="toast-type">${inv.trigger_type}</div>${esc(inv.message)}`;
+  toast.innerHTML = `<div class="toast-type">${inv.trigger_type}${inv.time ? ' · ' + inv.time : ''}</div>${esc(inv.message)}`;
   container.appendChild(toast);
   setTimeout(() => toast.remove(), 5000);
 }

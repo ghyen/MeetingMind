@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import traceback
+from enum import Enum
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -22,6 +23,8 @@ def _serialize(obj):
     """dataclass/enum → dict 재귀 직렬화."""
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return {k: _serialize(v) for k, v in dataclasses.asdict(obj).items()}
+    if isinstance(obj, Enum):
+        return obj.value
     if isinstance(obj, list):
         return [_serialize(i) for i in obj]
     if isinstance(obj, dict):
@@ -100,12 +103,18 @@ async def audio_stream(websocket: WebSocket):
         try:
             await pipe.on_utterance(utt)
             state = pipe.state
+            from config import settings
+            issue_tokens = {}
+            for topic in state.topics:
+                issue_tokens[str(topic.id)] = pipe.issue_structurer.get_pending_tokens(topic.id)
             msg = {
                 "type": "analysis",
                 "topics": _serialize(state.topics),
                 "issues": {str(k): _serialize(v) for k, v in state.issues.items()},
                 "interventions": _serialize(state.latest_interventions),
                 "references": _serialize(state.references[-5:]),
+                "issue_tokens": issue_tokens,
+                "issue_token_threshold": settings.issue_token_threshold,
             }
             if state.latest_corrections:
                 msg["corrections"] = _serialize(state.latest_corrections)

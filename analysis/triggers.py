@@ -56,6 +56,9 @@ class TriggerDetector:
         if inv := self._check_time_over(utterance, state):
             results.append(inv)
 
+        for inv in results:
+            inv.time = utterance.time
+
         return results
 
     # --- 키워드 기반 트리거 ---

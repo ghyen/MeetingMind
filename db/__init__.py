@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS interventions (
     trigger_type TEXT NOT NULL,
     message TEXT NOT NULL,
     level TEXT NOT NULL DEFAULT 'info',
-    topic_id INTEGER
+    topic_id INTEGER,
+    time TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS refs (
@@ -77,6 +78,11 @@ async def init_db() -> None:
     """테이블 자동 생성 (앱 시작 시 호출)."""
     async with aiosqlite.connect(settings.db_path) as db:
         await db.executescript(_SCHEMA)
+        # 기존 DB에 interventions.time 컬럼 없으면 추가 (idempotent migration)
+        cur = await db.execute("PRAGMA table_info(interventions)")
+        cols = {row[1] for row in await cur.fetchall()}
+        if "time" not in cols:
+            await db.execute("ALTER TABLE interventions ADD COLUMN time TEXT NOT NULL DEFAULT ''")
         await db.commit()
     logger.info("DB 초기화 완료: %s", settings.db_path)
 
@@ -224,13 +230,14 @@ async def get_issues(meeting_id: int) -> dict[int, dict]:
 # ── 개입 ──────────────────────────────────────────────
 
 async def save_intervention(
-    meeting_id: int, trigger_type: str, message: str, level: str, topic_id: int | None = None
+    meeting_id: int, trigger_type: str, message: str, level: str,
+    topic_id: int | None = None, time: str = "",
 ) -> int:
     async with aiosqlite.connect(settings.db_path) as db:
         cur = await db.execute(
-            "INSERT INTO interventions (meeting_id, trigger_type, message, level, topic_id) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (meeting_id, trigger_type, message, level, topic_id),
+            "INSERT INTO interventions (meeting_id, trigger_type, message, level, topic_id, time) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (meeting_id, trigger_type, message, level, topic_id, time),
         )
         await db.commit()
         return cur.lastrowid

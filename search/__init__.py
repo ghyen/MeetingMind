@@ -163,9 +163,16 @@ class ReferenceCollector:
     def __init__(self) -> None:
         self.internal = InternalSearch()
         self.web = WebSearch()
+        self._query_cache: set[str] = set()
 
     async def search(self, entity: Entity, top_k: int = 3) -> list[Reference]:
-        """엔티티의 search_query로 사내+웹 동시 검색 → 관련도 순 정렬."""
+        """엔티티의 search_query로 사내+웹 동시 검색 → 관련도 순 정렬.
+
+        이미 검색한 쿼리는 캐시로 스킵.
+        """
+        if entity.search_query in self._query_cache:
+            return []
+        self._query_cache.add(entity.search_query)
         internal_results, web_results = await asyncio.gather(
             self.internal.search(entity.search_query, top_k),
             self.web.search(entity.search_query, top_k),

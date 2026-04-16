@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     topic_keywords: list[str] = ["다음 안건", "그건 그렇고", "자 이제", "넘어가서"]
 
     # 쟁점 구조화
-    issue_batch_size: int = 10  # N개 발화마다 LLM으로 쟁점 업데이트
+    issue_token_threshold: int = 500  # 누적 발화 문자 수 기준으로 쟁점 업데이트
 
     # 개입 트리거
     loop_detection_count: int = 3

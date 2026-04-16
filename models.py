@@ -62,6 +62,7 @@ class Intervention:
     message: str
     level: AlertLevel = AlertLevel.INFO
     topic_id: int | None = None
+    time: str = ""  # "HH:MM:SS" — 알림 발생 시점 (회의 경과 기준)
 
 
 @dataclass
