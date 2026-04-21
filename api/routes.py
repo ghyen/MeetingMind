@@ -205,6 +205,40 @@ async def get_issue(topic_id: int):
     return {"topic_id": topic_id, "issue": _serialize(issue) if issue else None}
 
 
+class PositionUpdate(BaseModel):
+    speaker: str
+    stance: str
+    arguments: list[str] = []
+    evidence: list[str] = []
+
+
+class IssueUpdateRequest(BaseModel):
+    topic: str
+    positions: list[PositionUpdate] = []
+    consensus: str | None = None
+    decision: str | None = None
+    open_questions: list[str] = []
+
+
+@router.put("/meeting/issues/{topic_id}")
+async def update_issue(topic_id: int, body: IssueUpdateRequest):
+    """쟁점 구조 수동 편집."""
+    from models import IssueGraph, Position
+    pipe = _get_pipeline()
+    issue = IssueGraph(
+        topic=body.topic,
+        positions=[Position(speaker=p.speaker, stance=p.stance, arguments=p.arguments, evidence=p.evidence) for p in body.positions],
+        consensus=body.consensus,
+        decision=body.decision,
+        open_questions=body.open_questions,
+    )
+    pipe.state.issues[topic_id] = issue
+    pipe.issue_structurer._cache[topic_id] = issue
+    if pipe.meeting_id:
+        await db.save_issue(pipe.meeting_id, topic_id, dataclasses.asdict(issue))
+    return {"ok": True}
+
+
 @router.get("/meeting/summary")
 async def get_summary():
     """현재 회의 요약 조회."""
