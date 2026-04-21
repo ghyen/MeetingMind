@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS meetings (
     title TEXT,
     started_at TEXT NOT NULL,
     ended_at TEXT,
-    audio_path TEXT
+    audio_path TEXT,
+    speaker_names TEXT
 );
 
 CREATE TABLE IF NOT EXISTS utterances (
@@ -78,11 +79,15 @@ async def init_db() -> None:
     """테이블 자동 생성 (앱 시작 시 호출)."""
     async with aiosqlite.connect(settings.db_path) as db:
         await db.executescript(_SCHEMA)
-        # 기존 DB에 interventions.time 컬럼 없으면 추가 (idempotent migration)
+        # idempotent migrations
         cur = await db.execute("PRAGMA table_info(interventions)")
         cols = {row[1] for row in await cur.fetchall()}
         if "time" not in cols:
             await db.execute("ALTER TABLE interventions ADD COLUMN time TEXT NOT NULL DEFAULT ''")
+        cur = await db.execute("PRAGMA table_info(meetings)")
+        cols = {row[1] for row in await cur.fetchall()}
+        if "speaker_names" not in cols:
+            await db.execute("ALTER TABLE meetings ADD COLUMN speaker_names TEXT")
         await db.commit()
     logger.info("DB 초기화 완료: %s", settings.db_path)
 
@@ -118,12 +123,31 @@ async def update_meeting_title(meeting_id: int, title: str) -> None:
         await db.commit()
 
 
+async def update_speaker_names(meeting_id: int, speaker_names: dict) -> None:
+    async with aiosqlite.connect(settings.db_path) as db:
+        await db.execute(
+            "UPDATE meetings SET speaker_names = ? WHERE id = ?",
+            (json.dumps(speaker_names, ensure_ascii=False), meeting_id),
+        )
+        await db.commit()
+
+
 async def get_meeting(meeting_id: int) -> dict | None:
     async with aiosqlite.connect(settings.db_path) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,))
         row = await cur.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        m = dict(row)
+        if m.get("speaker_names"):
+            try:
+                m["speaker_names"] = json.loads(m["speaker_names"])
+            except Exception:
+                m["speaker_names"] = {}
+        else:
+            m["speaker_names"] = {}
+        return m
 
 
 async def list_meetings() -> list[dict]:

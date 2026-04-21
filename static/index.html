@@ -74,7 +74,7 @@ window.MM.MOCK_STATE = {
     { title: '2024 Q3 PG 수수료 벤치마크', source: 'internal', snippet: '토스페이먼츠 평균 2.1%, NHN KCP 2.3% 수준으로 조사...', relevance_score: 0.92 },
     { title: 'KCP vs Nice Pay 응답속도 비교 분석', source: 'web', snippet: '평균 응답 시간 KCP 1.8s, NicePay 2.4s...', url: '#', relevance_score: 0.74 },
   ],
-  speaker_names: { 'Speaker 1': '김지연', 'Speaker 2': '박민호', 'Speaker 3': '이서준', 'Speaker 4': '최하늘' },
+  speaker_names: {},
   meetings_history: [
     { id: 'demo', title: '결제 시스템 리뉴얼 Kickoff', date: '오늘 14:20', duration: '47분', active: true },
     { id: 'h2', title: '재무팀 월례 리뷰', date: '어제 10:00', duration: '1시간 12분' },
@@ -212,17 +212,23 @@ function App() {
   }, [recording, paused, muted]);
 
   // ── Actions ─────────────────────────────────────────
+  const MOCK_SPEAKER_NAMES = { 'Speaker 1': '김지연', 'Speaker 2': '박민호', 'Speaker 3': '이서준', 'Speaker 4': '최하늘' };
+
   function startMeeting({ title }) {
     setState((s) => ({
       ...s,
       meeting: { ...(s.meeting || {}), title: title || '새 회의', created_at: new Date().toLocaleString('ko-KR'), active: true },
+      speaker_names: { ...MOCK_SPEAKER_NAMES },
+      utterances: [], topics: [], issues: {}, interventions: [], references: [],
     }));
     historyViewRef.current = false;
     setRecording(true); setPaused(false);
     setTime(0);
     setRoute('live');
     if (hasBackend) {
-      window.MM.api.startMeeting({ title }).catch(() => {});
+      window.MM.api.startMeeting({ title }).then(() => {
+        window.MM.api.updateSpeakerNames(null, MOCK_SPEAKER_NAMES).catch(() => {});
+      }).catch(() => {});
       // WS (real audio)
       const ws = new window.MM.WS('/ws/audio');
       wsRef.current = ws;
@@ -296,7 +302,14 @@ function App() {
   }
 
   function renameSpeaker(speaker, name) {
-    setState((s) => ({ ...s, speaker_names: { ...(s.speaker_names || {}), [speaker]: name } }));
+    setState((s) => {
+      const updated = { ...(s.speaker_names || {}), [speaker]: name };
+      if (hasBackend) {
+        const meetingId = s.meeting?.id && s.meeting.id !== 'demo' ? s.meeting.id : null;
+        window.MM.api.updateSpeakerNames(meetingId, updated).catch(() => {});
+      }
+      return { ...s, speaker_names: updated };
+    });
   }
 
   function renameTopic(id, title) {
@@ -356,6 +369,7 @@ function App() {
         issues: data.issues || {},
         interventions: data.interventions || [],
         references: data.references || [],
+        speaker_names: m.speaker_names || {},
       }));
       if ((data.topics || []).length) setActiveTopicId(data.topics[data.topics.length - 1].id);
       setRoute('live');

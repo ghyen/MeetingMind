@@ -293,6 +293,25 @@ async def get_meeting_detail(meeting_id: int):
     return data
 
 
+class SpeakerNamesUpdate(BaseModel):
+    speaker_names: dict
+
+
+@router.put("/meetings/{meeting_id}/speaker-names")
+async def update_speaker_names(meeting_id: int, body: SpeakerNamesUpdate):
+    await db.update_speaker_names(meeting_id, body.speaker_names)
+    return {"ok": True}
+
+
+@router.put("/meeting/speaker-names")
+async def update_current_speaker_names(body: SpeakerNamesUpdate):
+    """현재 진행 중인 회의의 화자 이름 업데이트."""
+    pipe = _get_pipeline()
+    if pipe.meeting_id:
+        await db.update_speaker_names(pipe.meeting_id, body.speaker_names)
+    return {"ok": True}
+
+
 # ── 모델 선택 ─────────────────────────────────────────
 
 
