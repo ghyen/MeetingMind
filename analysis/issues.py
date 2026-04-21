@@ -1,16 +1,29 @@
 """쟁점 구조화 — 안건별 논점 그래프 구축.
 
-점진적 업데이트: 누적 발화 문자 수가 임계치를 넘으면 delta 반영 (settings.issue_token_threshold).
+점진적 업데이트: 누적 발화 토큰 수가 임계치를 넘으면 delta 반영 (settings.issue_token_threshold).
+토큰 카운트는 tiktoken cl100k_base 기준 (다국어 근사치, 실제 LLM 토크나이저와 완전 동일하진 않지만 일관됨).
 """
 
 from __future__ import annotations
 
 import json
+from functools import lru_cache
+
+import tiktoken
 
 from config import settings
 from models import Topic, Utterance, IssueGraph, Position
 from analysis.llm import ask_json
 _MAX_UTTERANCES_IN_PROMPT = 15
+
+
+@lru_cache(maxsize=1)
+def _tokenizer() -> tiktoken.Encoding:
+    return tiktoken.get_encoding("cl100k_base")
+
+
+def _count_tokens(text: str) -> int:
+    return len(_tokenizer().encode(text))
 
 _FEW_SHOT_EXAMPLE = """\
 예시:
@@ -32,13 +45,13 @@ class IssueStructurer:
 
         매 발화마다 LLM을 호출하면 비용과 지연이 크므로 배치 전략 사용:
         - 첫 발화: 즉시 _create_initial()로 초기 구조 생성
-        - 이후: pending 큐에 축적 → 누적 문자 수가 임계치를 넘으면 _apply_delta()로 일괄 반영
+        - 이후: pending 큐에 축적 → 누적 토큰 수가 임계치를 넘으면 _apply_delta()로 일괄 반영
         - 임계치 미만: 기존 구조를 그대로 반환 (LLM 호출 안 함)
         """
         existing = self._cache.get(topic.id)
         self._pending.setdefault(topic.id, []).append(new_utterance)
         self._pending_tokens[topic.id] = (
-            self._pending_tokens.get(topic.id, 0) + len(new_utterance.text)
+            self._pending_tokens.get(topic.id, 0) + _count_tokens(new_utterance.text)
         )
 
         if existing is None:
@@ -56,7 +69,7 @@ class IssueStructurer:
         return issue
 
     def get_pending_tokens(self, topic_id: int) -> int:
-        """토픽별 현재 누적 문자 수 반환."""
+        """토픽별 현재 누적 토큰 수 반환."""
         return self._pending_tokens.get(topic_id, 0)
 
     async def _create_initial(self, topic: Topic) -> IssueGraph:
