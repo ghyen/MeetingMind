@@ -108,7 +108,7 @@ async def upload_audio(file: UploadFile):
     import logging
     import time
     from audio_converter import convert_bytes
-    from stt.whisper_stt import WhisperFileSTT
+    from stt.whisper_stt import WhisperSTT
     from pipeline import _StepTimer
 
     upload_logger = logging.getLogger(__name__)
@@ -132,10 +132,11 @@ async def upload_audio(file: UploadFile):
 
     # faster-whisper로 배치 STT + 화자 식별
     async with timer.step("Whisper STT"):
-        whisper = WhisperFileSTT()
+        whisper = WhisperSTT()
         try:
             utterances = await asyncio.to_thread(whisper.transcribe_file, data)
         except Exception as e:
+            upload_logger.exception("STT 처리 실패")
             return {"error": f"STT 처리 실패: {e}"}
 
     upload_logger.info("STT 결과: %d개 발화", len(utterances))

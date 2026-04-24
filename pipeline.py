@@ -244,39 +244,32 @@ class Pipeline:
             self.state.topics[-1].utterances.append(utterance)
 
         # 4) 분석 모듈 실행
-        # Ollama는 내부적으로 요청을 직렬 처리하므로 병렬 호출해도 이득이 없음.
-        # OpenRouter 등 외부 API는 병렬 호출로 쟁점구조화+자료수집을 동시에 처리.
-        from analysis.llm import _active_provider
-        if _active_provider in ("ollama", "bonsai"):
-            async with timer.step("트리거감지"):
-                await self._check_triggers(utterance)
-            async with timer.step("쟁점구조화"):
-                await self._update_issues(utterance)
-            async with timer.step("자료수집"):
-                await self._search_references(utterance)
-        else:
-            # 트리거 감지는 키워드 기반이라 빠르므로 먼저 순차 실행
-            async with timer.step("트리거감지"):
-                await self._check_triggers(utterance)
-            # 쟁점구조화와 자료수집은 각각 LLM 호출이 필요하므로 병렬로 실행
-            t_issues = time.perf_counter()
-            t_refs = time.perf_counter()
+        # 트리거 감지는 키워드+카운터 기반이라 매우 빠르므로 먼저 순차 실행.
+        async with timer.step("트리거감지"):
+            await self._check_triggers(utterance)
 
-            async def _timed_issues():
-                nonlocal t_issues
-                await self._update_issues(utterance)
-                t_issues = time.perf_counter() - t_issues
+        # 쟁점구조화·자료수집은 LLM 호출이 필요하므로 asyncio.gather로 병렬 실행.
+        # - OpenRouter 등 외부 API: 기본적으로 동시 요청 허용
+        # - Ollama: OLLAMA_NUM_PARALLEL>=2 환경변수로 동시 처리 활성화
+        #   (기본값 1이면 서버에서 큐잉되나 클라이언트 gather는 무해)
+        t_issues = time.perf_counter()
+        t_refs = time.perf_counter()
 
-            async def _timed_refs():
-                nonlocal t_refs
-                await self._search_references(utterance)
-                t_refs = time.perf_counter() - t_refs
+        async def _timed_issues():
+            nonlocal t_issues
+            await self._update_issues(utterance)
+            t_issues = time.perf_counter() - t_issues
 
-            await asyncio.gather(
-                _timed_issues(), _timed_refs(), return_exceptions=True,
-            )
-            timer._steps.append(("쟁점구조화", t_issues))
-            timer._steps.append(("자료수집", t_refs))
+        async def _timed_refs():
+            nonlocal t_refs
+            await self._search_references(utterance)
+            t_refs = time.perf_counter() - t_refs
+
+        await asyncio.gather(
+            _timed_issues(), _timed_refs(), return_exceptions=True,
+        )
+        timer._steps.append(("쟁점구조화", t_issues))
+        timer._steps.append(("자료수집", t_refs))
 
         # 5) WebSocket broadcast — 연결된 모든 클라이언트에 실시간 push
         await self._emit("utterance", utterance)
