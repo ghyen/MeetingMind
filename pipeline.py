@@ -142,8 +142,25 @@ class Pipeline:
         company: str = "",
         description: str = "",
     ) -> int:
-        """새 회의 시작 → DB에 레코드 생성, meeting_id 반환."""
+        """새 회의 시작 → 이전 회의 상태 초기화 + DB에 레코드 생성."""
         import db
+
+        # 이전 회의가 아직 열려 있으면 종료 처리 (요약 저장)
+        if self.meeting_id:
+            try:
+                await self.end_meeting()
+            except Exception:
+                logger.warning("이전 회의 종료 중 오류 — 상태 초기화 계속", exc_info=True)
+
+        # 메모리 상태 초기화 — 이전 회의 덤프 데이터가 남지 않도록
+        self.state = MeetingState()
+        self.topic_detector._topic_counter = 0
+        self.topic_detector.segments = []
+        self.topic_detector._recent = []
+        self.issue_structurer._cache = {}
+        self.issue_structurer._pending = {}
+        self._stt_corrector = None
+
         self.meeting_id = await db.create_meeting(title=title, audio_path=audio_path)
         # 회의 컨텍스트 설정 → STT 교정에 활용
         if company or description:
