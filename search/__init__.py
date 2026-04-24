@@ -43,10 +43,12 @@ class EntityExtractor:
     )
 
     async def extract(self, utterance: Utterance) -> list[Entity]:
-        if not utterance.text.strip():
+        text = utterance.text.strip()
+        # 너무 짧은 맞장구("네", "알겠습니다")는 LLM 호출 전에 스킵
+        if len(text) < 10:
             return []
 
-        prompt = self._PROMPT.format(text=utterance.text)
+        prompt = self._PROMPT.format(text=text)
         try:
             result = await ask_json(prompt)
             entities = []

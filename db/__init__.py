@@ -72,6 +72,14 @@ CREATE TABLE IF NOT EXISTS summaries (
     meeting_id INTEGER NOT NULL UNIQUE REFERENCES meetings(id),
     summary_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meeting_id INTEGER NOT NULL REFERENCES meetings(id),
+    topic_id INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -335,10 +343,38 @@ async def get_summary(meeting_id: int) -> dict | None:
         return json.loads(row["summary_json"]) if row else None
 
 
+# ── 메모 ──────────────────────────────────────────────
+
+async def save_note(meeting_id: int, topic_id: int, text: str) -> dict:
+    created_at = datetime.now().isoformat()
+    async with aiosqlite.connect(settings.db_path) as db:
+        cur = await db.execute(
+            "INSERT INTO notes (meeting_id, topic_id, text, created_at) VALUES (?, ?, ?, ?)",
+            (meeting_id, topic_id, text, created_at),
+        )
+        await db.commit()
+        return {"id": cur.lastrowid, "meeting_id": meeting_id, "topic_id": topic_id, "text": text, "created_at": created_at}
+
+
+async def get_notes(meeting_id: int, topic_id: int | None = None) -> list[dict]:
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        if topic_id is None:
+            cur = await db.execute(
+                "SELECT * FROM notes WHERE meeting_id = ? ORDER BY id", (meeting_id,),
+            )
+        else:
+            cur = await db.execute(
+                "SELECT * FROM notes WHERE meeting_id = ? AND topic_id = ? ORDER BY id",
+                (meeting_id, topic_id),
+            )
+        return [dict(r) for r in await cur.fetchall()]
+
+
 # ── 전체 회의 데이터 복원 ─────────────────────────────
 
 async def get_full_meeting(meeting_id: int) -> dict | None:
-    """회의 전체 데이터 조회 (meeting + utterances + topics + issues + interventions + refs)."""
+    """회의 전체 데이터 조회 (meeting + utterances + topics + issues + interventions + refs + notes)."""
     meeting = await get_meeting(meeting_id)
     if not meeting:
         return None
@@ -350,4 +386,5 @@ async def get_full_meeting(meeting_id: int) -> dict | None:
         "interventions": await get_interventions(meeting_id),
         "references": await get_references(meeting_id),
         "summary": await get_summary(meeting_id),
+        "notes": await get_notes(meeting_id),
     }

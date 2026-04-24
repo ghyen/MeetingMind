@@ -19,6 +19,7 @@
     simulate(body) { return this._req('/api/meeting/simulate', { method: 'POST', body: JSON.stringify(body) }); },
     updateIssue(topicId, body) { return this._req(`/api/meeting/issues/${topicId}`, { method: 'PUT', body: JSON.stringify(body) }); },
     summary() { return this._req('/api/meeting/summary'); },
+    ask(question) { return this._req('/api/meeting/ask', { method: 'POST', body: JSON.stringify({ question }) }); },
     reset() { return this._req('/api/meeting/reset', { method: 'POST' }); },
     listMeetings() { return this._req('/api/meetings'); },
     getMeeting(id) { return this._req(`/api/meetings/${id}`); },
@@ -33,6 +34,17 @@
       fd.append('file', file);
       const r = await fetch(BASE + '/api/meeting/upload', { method: 'POST', body: fd });
       return r.json();
+    },
+    saveNote(topicId, text) {
+      return this._req('/api/meeting/notes', { method: 'POST', body: JSON.stringify({ topic_id: topicId, text }) });
+    },
+    listNotes(topicId) {
+      const q = topicId != null ? `?topic_id=${topicId}` : '';
+      return this._req(`/api/meeting/notes${q}`);
+    },
+    listMeetingNotes(meetingId, topicId) {
+      const q = topicId != null ? `?topic_id=${topicId}` : '';
+      return this._req(`/api/meetings/${meetingId}/notes${q}`);
     },
   };
 

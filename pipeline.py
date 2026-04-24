@@ -355,20 +355,12 @@ class Pipeline:
         except Exception:
             logger.warning("트리거 감지 실패", exc_info=True)
 
-    def _has_disagreement(self) -> bool:
-        """현재 토픽에 2명 이상의 서로 다른 입장이 있고 합의가 없는지 판단."""
-        if not self.state.topics:
-            return False
-        current = self.state.topics[-1]
-        issue = self.state.issues.get(current.id)
-        if issue is None:
-            return False
-        return len(issue.positions) >= 2 and issue.consensus is None
-
     async def _search_references(self, utterance: Utterance) -> None:
-        """언쟁(부동의) 감지 시에만 엔티티 추출 → 사내DB+웹 검색."""
-        if not self._has_disagreement():
-            return
+        """발화에서 엔티티 추출 → 사내DB+웹 검색.
+
+        EntityExtractor가 언급할 만한 문서/데이터/인물/조직/수치가 없으면
+        빈 배열을 반환하므로, 의미 없는 짧은 발화엔 검색이 스킵된다.
+        """
         try:
             entities = await self.entity_extractor.extract(utterance)
             for entity in entities:

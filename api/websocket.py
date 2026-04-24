@@ -111,7 +111,8 @@ async def audio_stream(websocket: WebSocket):
                 "type": "analysis",
                 "topics": _serialize(state.topics),
                 "issues": {str(k): _serialize(v) for k, v in state.issues.items()},
-                "interventions": _serialize(state.latest_interventions),
+                # 누적 전체 목록 전송 — 프론트에서 교체 방식으로 받아도 알림이 유지됨
+                "interventions": _serialize(state.interventions),
                 "references": _serialize(state.references[-5:]),
                 "issue_tokens": issue_tokens,
                 "issue_token_threshold": settings.issue_token_threshold,

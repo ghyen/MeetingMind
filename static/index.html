@@ -13,6 +13,7 @@
   @keyframes mmwave { from { transform: scaleY(0.3); } to { transform: scaleY(1); } }
   @keyframes mmfade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   @keyframes mmshimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @keyframes mmspin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   button { font-family: inherit; }
   input, textarea { font-family: inherit; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -129,8 +130,11 @@ function App() {
 
   const [state, setState] = useState(window.MM.MOCK_STATE);
   const [activeTopicId, setActiveTopicId] = useState(1);
-  const [transcriptOpen, setTranscriptOpen] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem('mm_sidebar') !== 'closed');
+  const toggleSidebar = () => setSidebarOpen((o) => { localStorage.setItem('mm_sidebar', o ? 'closed' : 'open'); return !o; });
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [notesByTopic, setNotesByTopic] = useState({});
   const [isDark, setIsDark] = useState(() => localStorage.getItem('mm_theme') !== 'light');
   const toggleTheme = () => setIsDark((d) => { localStorage.setItem('mm_theme', d ? 'light' : 'dark'); return !d; });
   const [recording, setRecording] = useState(false);
@@ -142,8 +146,6 @@ function App() {
   const [partialSpeaker, setPartialSpeaker] = useState('');
   const [level, setLevel] = useState(0);
   const [bookmarks, setBookmarks] = useState([]);
-  const [models, setModels] = useState(null);
-  const [activeModel, setActiveModel] = useState(null);
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [timer, setTime] = useTimer(recording && !paused);
@@ -172,15 +174,14 @@ function App() {
           issues: s.issues || prev.issues,
           interventions: s.interventions || [],
           references: s.references || [],
+          issue_tokens: s.issue_tokens || {},
+          issue_token_threshold: s.issue_token_threshold || prev.issue_token_threshold || 500,
         }));
         if (s.topics?.length) setActiveTopicId(s.topics[s.topics.length - 1].id);
       } catch (e) { setConnected(false); }
     }
     tick();
     const id = setInterval(tick, 3000);
-    (async () => {
-      try { const m = await window.MM.api.models(); if (!cancelled) setModels(m); } catch {}
-    })();
     (async () => {
       try {
         const res = await window.MM.api.listMeetings();
@@ -195,6 +196,22 @@ function App() {
       } catch {}
     })();
     return () => { cancelled = true; clearInterval(id); };
+  }, [hasBackend]);
+
+  // ── Server logs stream (/ws/updates) ────────────────
+  useEffect(() => {
+    if (hasBackend !== true) return;
+    const ws = new window.MM.WS('/ws/updates');
+    ws.onMessage((m) => {
+      if (m.type === 'log') {
+        setLogs((prev) => {
+          const next = [...prev, { level: m.level, message: m.message }];
+          return next.length > 200 ? next.slice(-200) : next;
+        });
+      }
+    });
+    ws.connect();
+    return () => ws.close();
   }, [hasBackend]);
 
   // ── Derived ─────────────────────────────────────────
@@ -247,6 +264,8 @@ function App() {
             issues: m.issues || s.issues,
             interventions: m.interventions || s.interventions,
             references: m.references || s.references,
+            issue_tokens: m.issue_tokens || s.issue_tokens || {},
+            issue_token_threshold: m.issue_token_threshold || s.issue_token_threshold || 500,
           }));
           setAnalyzing(false);
         } else if (m.type === 'status') {
@@ -297,14 +316,35 @@ function App() {
     setRecording(false); setPaused(false);
     if (hasBackend) window.MM.api.reset().catch(() => {});
     setState(window.MM.MOCK_STATE);
-    setSettingsOpen(false);
+    setNotesByTopic({});
     setRoute('start');
   }
 
-  function setModel(provider, model) {
-    setActiveModel({ provider, model });
-    if (hasBackend) window.MM.api.setModel(provider, model).catch(() => {});
+  async function loadNotes(topicId) {
+    if (!hasBackend || topicId == null) return;
+    try {
+      const r = historyViewRef.current && state.meeting?.id && state.meeting.id !== 'demo'
+        ? await window.MM.api.listMeetingNotes(state.meeting.id, topicId)
+        : await window.MM.api.listNotes(topicId);
+      setNotesByTopic((prev) => ({ ...prev, [topicId]: r.notes || [] }));
+    } catch {}
   }
+
+  async function saveNote(topicId, text) {
+    if (!hasBackend) {
+      const local = { id: Date.now(), topic_id: topicId, text, created_at: new Date().toISOString() };
+      setNotesByTopic((prev) => ({ ...prev, [topicId]: [...(prev[topicId] || []), local] }));
+      return;
+    }
+    const r = await window.MM.api.saveNote(topicId, text);
+    if (r.note) {
+      setNotesByTopic((prev) => ({ ...prev, [topicId]: [...(prev[topicId] || []), r.note] }));
+    }
+  }
+
+  useEffect(() => {
+    if (activeTopicId != null && !(activeTopicId in notesByTopic)) loadNotes(activeTopicId);
+  }, [activeTopicId, hasBackend]);
 
   function renameSpeaker(speaker, name) {
     setState((s) => {
@@ -344,7 +384,11 @@ function App() {
   }
 
   async function askAi(question) {
-    // Use built-in claude if available, else echo.
+    if (hasBackend) {
+      const r = await window.MM.api.ask(question);
+      if (r.error) throw new Error(r.error);
+      return r.answer || '답변을 찾지 못했어요.';
+    }
     if (window.claude?.complete) {
       const ctx = state.utterances.slice(-20).map((u) => `[${u.time}] ${speakerNames[u.speaker] || u.speaker}: ${u.text}`).join('\n');
       return await window.claude.complete(`다음은 진행 중인 회의의 최근 발화입니다.\n\n${ctx}\n\n질문: ${question}\n\n한국어로 간결히 답하세요.`);
@@ -376,23 +420,29 @@ function App() {
         references: data.references || [],
         speaker_names: m.speaker_names || {},
       }));
+      const grouped = {};
+      for (const n of (data.notes || [])) {
+        (grouped[n.topic_id] = grouped[n.topic_id] || []).push(n);
+      }
+      setNotesByTopic(grouped);
       if ((data.topics || []).length) setActiveTopicId(data.topics[data.topics.length - 1].id);
       setRoute('live');
     } catch {}
   }
 
-  const { TopBar, Sidebar, AgendaTabs, RecordBar, StartScreen, SettingsModal, SummaryScreen,
+  const { TopBar, Sidebar, AgendaTabs, RecordBar, StartScreen, LogsModal, SummaryScreen,
           TranscriptPanel, IssueCard, RightRail } = window.MM;
+  const logsProps = { open: logsOpen, onClose: () => setLogsOpen(false), logs, onClear: () => setLogs([]) };
+  const sidebarProps = { meetings: state.meetings_history || [], activeId: state.meeting?.id, open: sidebarOpen, onToggleOpen: toggleSidebar };
 
   // ── START SCREEN ─────────────────────────────────
   if (route === 'start') {
     return (
       <div style={{ ...css, display: 'flex', height: '100vh', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'var(--font)' }}>
-        <Sidebar meetings={state.meetings_history || []} activeId={state.meeting?.id}
-          onNew={() => {}} onSelect={loadMeeting}/>
+        <Sidebar {...sidebarProps} onNew={() => {}} onSelect={loadMeeting}/>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <TopBar title="새 회의" recording={false} connected={connected}
-            onOpenSettings={() => setSettingsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
+            onOpenLogs={() => setLogsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
           <StartScreen onStart={startMeeting} onUpload={() => document.getElementById('mm-upload')?.click()}/>
           <input id="mm-upload" type="file" accept="audio/*,video/*" style={{ display: 'none' }}
             onChange={async (e) => {
@@ -401,7 +451,7 @@ function App() {
               else { startMeeting({ title: f.name }); }
             }}/>
         </div>
-        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} models={models} activeModel={activeModel} onSetModel={setModel} onReset={resetAll}/>
+        <LogsModal {...logsProps}/>
       </div>
     );
   }
@@ -410,15 +460,15 @@ function App() {
   if (route === 'summary') {
     return (
       <div style={{ ...css, display: 'flex', height: '100vh', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'var(--font)' }}>
-        <Sidebar meetings={state.meetings_history || []} activeId={state.meeting?.id}
-          onNew={() => setRoute('start')} onSelect={loadMeeting}/>
+        <Sidebar {...sidebarProps} onNew={() => setRoute('start')} onSelect={loadMeeting}/>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <TopBar title={state.meeting?.title || '완료된 회의'} recording={false} connected={connected}
-            onOpenSettings={() => setSettingsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
+            onOpenLogs={() => setLogsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
           <SummaryScreen meeting={state.meeting} summary={summary} loading={summaryLoading}
+            issues={state.issues} topics={state.topics} notesByTopic={notesByTopic}
             onBack={() => setRoute('live')} onNew={() => setRoute('start')}/>
         </div>
-        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} models={models} activeModel={activeModel} onSetModel={setModel} onReset={resetAll}/>
+        <LogsModal {...logsProps}/>
       </div>
     );
   }
@@ -426,15 +476,13 @@ function App() {
   // ── LIVE SCREEN ──────────────────────────────────
   return (
     <div style={{ ...css, display: 'flex', height: '100vh', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'var(--font)' }}>
-      <Sidebar meetings={state.meetings_history || []} activeId={state.meeting?.id}
-        onNew={() => setRoute('start')} onSelect={loadMeeting}/>
+      <Sidebar {...sidebarProps} onNew={() => setRoute('start')} onSelect={loadMeeting}/>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TopBar title={state.meeting?.title} onTitleChange={(t) => setState((s) => ({ ...s, meeting: { ...s.meeting, title: t } }))}
           recording={recording} analyzing={analyzing} connected={connected}
-          onOpenSettings={() => setSettingsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
+          onOpenLogs={() => setLogsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
         <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
-          <TranscriptPanel open={transcriptOpen} onToggleOpen={() => setTranscriptOpen((o) => !o)}
-            utterances={state.utterances} live={recording && !paused}
+          <TranscriptPanel utterances={state.utterances} live={recording && !paused}
             speakerNames={speakerNames} onRenameSpeaker={renameSpeaker}
             analyzing={analyzing} partialText={partialText} partialSpeaker={partialSpeaker}
             bookmarks={bookmarks} onBookmark={toggleBookmark}/>
@@ -446,6 +494,10 @@ function App() {
 
               {activeIssue && (
                 <IssueCard issue={activeIssue} topicId={activeTopicId} topic={activeTopic} active={true}
+                  pendingTokens={state.issue_tokens?.[activeTopicId] || 0}
+                  tokenThreshold={state.issue_token_threshold || 500}
+                  notes={notesByTopic[activeTopicId] || []}
+                  onSaveNote={(text) => saveNote(activeTopicId, text)}
                   onCommitConsensus={(text) => commitConsensus(activeTopicId, text)}
                   onUpdate={(patch) => updateIssue(activeTopicId, patch)}/>
               )}
@@ -478,7 +530,7 @@ function App() {
           )}
         </div>
       </div>
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} models={models} activeModel={activeModel} onSetModel={setModel} onReset={resetAll}/>
+      <LogsModal {...logsProps}/>
     </div>
   );
 }

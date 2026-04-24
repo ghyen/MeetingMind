@@ -39,6 +39,7 @@ class TriggerDetector:
 
     def __init__(self) -> None:
         self._emitted_no_decision: set[int] = set()
+        self._last_loop_time: dict[int, str] = {}  # topic_id → 직전 loop 알림 시각
 
     async def check(self, utterance: Utterance, state: MeetingState) -> list[Intervention]:
         results: list[Intervention] = []
@@ -49,7 +50,7 @@ class TriggerDetector:
             results.append(inv)
         if inv := self._check_no_decision(state):
             results.append(inv)
-        if inv := self._check_loop(state):
+        if inv := self._check_loop(utterance, state):
             results.append(inv)
         if inv := self._check_silence(state):
             results.append(inv)
@@ -108,21 +109,29 @@ class TriggerDetector:
 
     # --- 패턴 기반 트리거 ---
 
-    def _check_loop(self, state: MeetingState) -> Intervention | None:
-        """논의 순환 감지: 현재 토픽의 최근 10개 발화에서 같은 단어가 3회+ 반복되면 경고.
+    def _check_loop(
+        self, utterance: Utterance, state: MeetingState
+    ) -> Intervention | None:
+        """논의 순환 감지: 현재 토픽의 최근 20개 발화에서 같은 단어가 N회+ 반복되면 경고.
 
         동작:
-        1. 현재 토픽의 최근 10개 발화에서 모든 단어 추출 (2자 미만, 불용어 제외)
-        2. Counter로 빈도 계산 → 상위 5개 중 3회+ 반복 단어 탐지
+        1. 현재 토픽의 최근 20개 발화에서 모든 단어 추출 (2자 미만, 불용어 제외)
+        2. Counter로 빈도 계산 → 상위 5개 중 loop_detection_count 이상 반복 단어 탐지
         3. 반복 단어가 있으면 "논의가 반복되고 있습니다" 경고
+        4. 같은 토픽에서 직전 loop 알림 후 loop_cooldown_min 분 내면 중복 알림 억제
 
         불용어 필터(_STOPWORDS)가 없으면 "합니다", "정도" 같은 일반 단어로 오탐 발생.
         """
         if not state.topics:
             return None
         current = state.topics[-1]
-        recent = current.utterances[-10:]
+        recent = current.utterances[-20:]
         if len(recent) < settings.loop_detection_count:
+            return None
+
+        # 같은 토픽 쿨다운 — 최근 알림 직후 중복 탐지 억제
+        last_time = self._last_loop_time.get(current.id)
+        if last_time and _time_diff_minutes(last_time, utterance.time) < settings.loop_cooldown_min:
             return None
 
         words: list[str] = []
@@ -135,6 +144,7 @@ class TriggerDetector:
         ]
 
         if repeated:
+            self._last_loop_time[current.id] = utterance.time
             return Intervention(
                 trigger_type="loop",
                 message=f"논의가 반복되고 있습니다 (반복 키워드: {', '.join(repeated[:3])})",

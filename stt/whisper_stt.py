@@ -29,6 +29,32 @@ def _format_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
+def _has_repetition_hallucination(text: str, threshold: int = 4) -> bool:
+    """Whisper 반복 할루시네이션 감지 — 1~3단어 구가 threshold회 이상 연속 반복되면 True.
+
+    예) "최재원 최재원 최재원 최재원" → True
+        "네 네 알겠습니다 네" → False (연속 4회 아님)
+    """
+    words = text.split()
+    if len(words) < threshold:
+        return False
+    for n in (1, 2, 3):
+        if len(words) < n * threshold:
+            continue
+        i = 0
+        while i + n * threshold <= len(words):
+            phrase = words[i : i + n]
+            count = 1
+            j = i + n
+            while j + n <= len(words) and words[j : j + n] == phrase:
+                count += 1
+                j += n
+            if count >= threshold:
+                return True
+            i += 1
+    return False
+
+
 class WhisperSTT:
     """mlx-whisper 통합 엔진 (실시간 + 파일)."""
 
@@ -77,12 +103,17 @@ class WhisperSTT:
             path_or_hf_repo=self._mlx_repo,
             language="ko",
             verbose=False,
+            # 반복 할루시네이션 억제 — 이전 세그먼트 텍스트를 컨텍스트로 쓰지 않음
+            condition_on_previous_text=False,
         )
 
         utterances = []
         for seg in result.get("segments", []):
             text = seg["text"].strip()
             if not text:
+                continue
+            if _has_repetition_hallucination(text):
+                logger.warning("Whisper 반복 할루시네이션 감지, 세그먼트 폐기: %s", text[:60])
                 continue
 
             start_sample = int(seg["start"] * sample_rate)
@@ -181,6 +212,8 @@ class WhisperSTT:
             path_or_hf_repo=self._mlx_repo,
             language="ko",
             verbose=False,
+            # 반복 할루시네이션 억제 — 이전 세그먼트 텍스트를 컨텍스트로 쓰지 않음
+            condition_on_previous_text=False,
         )
         texts = [seg["text"].strip() for seg in result.get("segments", []) if seg["text"].strip()]
         text = " ".join(texts)
@@ -188,6 +221,13 @@ class WhisperSTT:
 
         if not text:
             logger.info("Whisper 결과 없음 (%.2f초 소요)", stt_elapsed)
+            return None
+
+        if _has_repetition_hallucination(text):
+            logger.warning(
+                "Whisper 반복 할루시네이션 감지, 발화 폐기 (%.2f초): %s",
+                stt_elapsed, text[:60],
+            )
             return None
 
         t1 = time.time()

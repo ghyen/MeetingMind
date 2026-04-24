@@ -3,7 +3,7 @@
 const { useState: sU, useEffect: sUE } = React;
 
 // ─── Top bar ───────────────────────────────────────
-function TopBar({ title, onTitleChange, onOpenHistory, onOpenSettings, analyzing, connected, recording, isDark, onToggleTheme }) {
+function TopBar({ title, onTitleChange, onOpenHistory, onOpenLogs, analyzing, connected, recording, isDark, onToggleTheme }) {
   const { MMI, IconButton, Pill, InlineEdit } = window.MM;
   return (
     <div style={{
@@ -33,21 +33,55 @@ function TopBar({ title, onTitleChange, onOpenHistory, onOpenSettings, analyzing
         <IconButton label={isDark ? '라이트 모드' : '다크 모드'} onClick={onToggleTheme}>
           {isDark ? <MMI.sun width="16" height="16"/> : <MMI.moon width="16" height="16"/>}
         </IconButton>
-        <IconButton label="설정" onClick={onOpenSettings}><MMI.settings width="16" height="16"/></IconButton>
+        <IconButton label="서버 로그" onClick={onOpenLogs}><MMI.terminal width="16" height="16"/></IconButton>
       </div>
     </div>
   );
 }
 
 // ─── Sidebar (meeting history) ─────────────────────
-function Sidebar({ meetings, activeId, onSelect, onNew }) {
-  const { MMI, Button } = window.MM;
+function Sidebar({ meetings, activeId, onSelect, onNew, open = true, onToggleOpen }) {
+  const { MMI, Button, IconButton } = window.MM;
+  if (!open) {
+    return (
+      <div style={{
+        width: 48, background: 'var(--surface-muted)', borderRight: '1px solid var(--border)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 12, gap: 10,
+        flexShrink: 0,
+      }}>
+        <button onClick={onToggleOpen} title="사이드바 펼치기" style={{
+          width: 32, height: 32, borderRadius: 8, border: 'none', background: 'transparent',
+          color: 'var(--text-2)', cursor: 'pointer', display: 'grid', placeItems: 'center',
+        }}>
+          <MMI.panel width="18" height="18"/>
+        </button>
+        <button onClick={onNew} title="새 회의" style={{
+          width: 32, height: 32, borderRadius: 8, border: 'none', background: 'var(--accent)',
+          color: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center',
+        }}>
+          <MMI.plus width="14" height="14"/>
+        </button>
+        <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 12, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.02em', marginTop: 6 }}>
+          회의 {meetings.length}
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{
       width: 260, background: 'var(--surface-muted)', borderRight: '1px solid var(--border)',
       display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: 0,
     }}>
-      <div style={{ padding: 12 }}>
+      <div style={{ padding: '10px 12px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-3)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>회의 히스토리</div>
+        <button onClick={onToggleOpen} title="사이드바 접기" style={{
+          border: 'none', background: 'transparent', color: 'var(--text-3)', cursor: 'pointer',
+          padding: 6, borderRadius: 6, display: 'grid', placeItems: 'center',
+        }}>
+          <MMI.panel width="16" height="16"/>
+        </button>
+      </div>
+      <div style={{ padding: '4px 12px 8px' }}>
         <Button variant="primary" size="md" icon={<MMI.plus width="14" height="14"/>} style={{ width: '100%' }} onClick={onNew}>새 회의 시작</Button>
       </div>
       <div style={{ padding: '4px 12px 8px', fontSize: 'var(--fs-xs)', color: 'var(--text-3)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
@@ -356,9 +390,19 @@ function SummaryProgress() {
 }
 
 // ─── Post-meeting summary screen ──────────────────
-function SummaryScreen({ meeting, summary, loading, onBack, onNew }) {
-  const { MMI, Button, Avatar } = window.MM;
+function SummaryScreen({ meeting, summary, loading, onBack, onNew, issues, topics, notesByTopic }) {
+  const { MMI, Button, Avatar, IssueCard } = window.MM;
   if (!meeting) return null;
+  const issueCards = (topics || [])
+    .map((t) => {
+      const iss = issues?.[t.id];
+      if (!iss) return null;
+      const topicNotes = notesByTopic?.[t.id] || [];
+      const hasContent = (iss.positions?.length || 0) > 0 || iss.consensus || iss.decision || (iss.open_questions?.length || 0) > 0 || topicNotes.length > 0;
+      if (!hasContent) return null;
+      return <IssueCard key={t.id} issue={iss} topicId={t.id} topic={t} active={false} readOnly={true} notes={topicNotes}/>;
+    })
+    .filter(Boolean);
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '32px 40px' }}>
       <div style={{ maxWidth: 720, margin: '0 auto', display: 'grid', gap: 20 }}>
@@ -387,6 +431,13 @@ function SummaryScreen({ meeting, summary, loading, onBack, onNew }) {
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 24 }}>
             <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>한 줄 요약</div>
             <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.55 }}>{summary.one_line}</div>
+          </div>
+        )}
+
+        {issueCards.length > 0 && (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>쟁점 구조화</div>
+            <div style={{ display: 'grid', gap: 20 }}>{issueCards}</div>
           </div>
         )}
 
@@ -423,5 +474,55 @@ function SummaryScreen({ meeting, summary, loading, onBack, onNew }) {
   );
 }
 
+// ─── Server log modal ─────────────────────────────
+function LogsModal({ open, onClose, logs, onClear }) {
+  const { MMI, Button, IconButton } = window.MM;
+  const scrollRef = React.useRef(null);
+  sUE(() => {
+    if (open && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [open, logs?.length]);
+  if (!open) return null;
+
+  const colorFor = (level) => {
+    const l = (level || '').toLowerCase();
+    if (l === 'error' || l === 'critical') return 'var(--danger)';
+    if (l === 'warning' || l === 'warn') return 'var(--warning)';
+    if (l === 'debug') return 'var(--text-4)';
+    return 'var(--text-3)';
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'grid', placeItems: 'center', padding: 24 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: 720, maxWidth: '100%', maxHeight: '80vh',
+        background: 'var(--bg-elevated)', borderRadius: 16, border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-lifted)', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 'var(--fs-md)', fontWeight: 800, color: 'var(--text)' }}>서버 로그</div>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-3)', marginTop: 2 }}>{logs.length}줄 · 실시간</div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Button variant="ghost" size="sm" onClick={onClear} icon={<MMI.trash width="12" height="12"/>}>지우기</Button>
+            <IconButton label="닫기" onClick={onClose}><MMI.close width="14" height="14"/></IconButton>
+          </div>
+        </div>
+        <div ref={scrollRef} style={{
+          flex: 1, overflowY: 'auto', padding: '10px 16px',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontSize: 12, lineHeight: 1.55, background: 'var(--surface-muted)',
+        }}>
+          {logs.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-4)' }}>로그가 아직 없어요</div>
+          ) : logs.map((l, i) => (
+            <div key={i} style={{ color: colorFor(l.level), whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{l.message}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 window.MM = window.MM || {};
-Object.assign(window.MM, { TopBar, Sidebar, AgendaTabs, RecordBar, MicLevel, StartScreen, SettingsModal, SummaryScreen, SummaryProgress });
+Object.assign(window.MM, { TopBar, Sidebar, AgendaTabs, RecordBar, MicLevel, StartScreen, SettingsModal, SummaryScreen, SummaryProgress, LogsModal });

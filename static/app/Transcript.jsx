@@ -3,7 +3,7 @@
 
 const { useState: tU, useEffect: tUE, useRef: tUR } = React;
 
-function TranscriptPanel({ utterances, live, speakerNames, onRenameSpeaker, onJumpToIssue, partialText, partialSpeaker, analyzing, open, onToggleOpen, bookmarks = [], onBookmark }) {
+function TranscriptPanel({ utterances, live, speakerNames, onRenameSpeaker, onJumpToIssue, partialText, partialSpeaker, analyzing, bookmarks = [], onBookmark }) {
   const { MMI, Avatar, InlineEdit, Pill } = window.MM;
   const scrollRef = tUR(null);
   const [query, setQuery] = tU('');
@@ -15,37 +15,14 @@ function TranscriptPanel({ utterances, live, speakerNames, onRenameSpeaker, onJu
     ? utterances.filter((u) => u.text.includes(query) || (speakerNames[u.speaker] || '').includes(query))
     : utterances;
 
-  if (!open) {
-    return (
-      <div onClick={onToggleOpen} style={{
-        width: 48, background: 'var(--surface)', borderRight: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 16, gap: 14,
-        cursor: 'pointer',
-      }}>
-        <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--accent-soft)', color: 'var(--accent)', display: 'grid', placeItems: 'center' }}>
-          <MMI.doc width="16" height="16"/>
-        </div>
-        <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 12, fontWeight: 600, color: 'var(--text-2)', letterSpacing: '0.02em' }}>
-          스크립트 · {utterances.length}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ width: 340, background: 'var(--surface)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0, flexShrink: 0 }}>
-      <div style={{ padding: '14px 18px 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>실시간 스크립트</div>
-          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-3)', marginTop: 2 }}>
-            {utterances.length}개 발화 · {Object.keys(speakerNames || {}).length || 0}명
-            {analyzing && <span style={{ marginLeft: 8, color: 'var(--accent)' }}>● 분석 중</span>}
-          </div>
+      <div style={{ padding: '14px 18px 10px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>실시간 스크립트</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-3)', marginTop: 2 }}>
+          {utterances.length}개 발화 · {Object.keys(speakerNames || {}).length || 0}명
+          {analyzing && <span style={{ marginLeft: 8, color: 'var(--accent)' }}>● 분석 중</span>}
         </div>
-        <button onClick={onToggleOpen} style={{ border: 'none', background: 'transparent', color: 'var(--text-3)', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'grid', placeItems: 'center' }}
-          title="접기">
-          <MMI.panel width="18" height="18"/>
-        </button>
       </div>
 
       <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>

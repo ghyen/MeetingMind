@@ -240,6 +240,134 @@ async def update_issue(topic_id: int, body: IssueUpdateRequest):
     return {"ok": True}
 
 
+class AskRequest(BaseModel):
+    question: str
+
+
+@router.post("/meeting/ask")
+async def ask_ai(req: AskRequest):
+    """AI 채팅 — 전체 스크립트 + 쟁점 구조 + 요약본을 컨텍스트로 답변.
+
+    컨텍스트 구성:
+      1) 저장된 회의 요약 (있으면)
+      2) 안건별 쟁점 구조 (positions, consensus, decision, open_questions)
+      3) 전체 발화 스크립트 (토큰 예산을 위해 최대 12,000자까지, 초과 시 앞부분 생략)
+    """
+    from analysis.llm import ask_json
+
+    pipe = _get_pipeline()
+    state = pipe.state
+
+    # 화자 이름 + 저장된 요약을 DB에서 조회
+    speaker_names: dict = {}
+    saved_summary = None
+    if pipe.meeting_id:
+        meeting = await db.get_meeting(pipe.meeting_id)
+        if meeting:
+            speaker_names = meeting.get("speaker_names") or {}
+        saved_summary = await db.get_summary(pipe.meeting_id)
+
+    def _label(speaker: str) -> str:
+        return speaker_names.get(speaker, speaker)
+
+    # 1) 전체 스크립트 — 긴 회의는 앞부분 생략하여 최근 쪽을 보존
+    lines = [f"[{u.time}] {_label(u.speaker)}: {u.text}" for u in state.utterances]
+    transcript = "\n".join(lines)
+    MAX_CHARS = 12000
+    if len(transcript) > MAX_CHARS:
+        transcript = "… (앞부분 생략) …\n" + transcript[-MAX_CHARS:]
+    transcript = transcript or "(아직 발화가 없습니다)"
+
+    # 2) 안건별 쟁점 구조
+    issue_blocks = []
+    for topic in state.topics:
+        issue = state.issues.get(topic.id)
+        header = f"[안건 {topic.id}] {topic.title}"
+        if not issue:
+            issue_blocks.append(f"{header}\n  (쟁점 없음)")
+            continue
+        parts = [header]
+        for p in issue.positions:
+            args = "; ".join(p.arguments) if p.arguments else "-"
+            parts.append(f"  · {_label(p.speaker)} 입장: {p.stance} | 근거: {args}")
+        if issue.consensus:
+            parts.append(f"  · 합의: {issue.consensus}")
+        if issue.decision:
+            parts.append(f"  · 결정: {issue.decision}")
+        if issue.open_questions:
+            parts.append(f"  · 미결: {', '.join(issue.open_questions)}")
+        issue_blocks.append("\n".join(parts))
+    issues_text = "\n\n".join(issue_blocks) if issue_blocks else "(안건 없음)"
+
+    # 3) 저장된 요약 (회의 종료 후)
+    summary_text = ""
+    if saved_summary:
+        one_line = saved_summary.get("one_line", "")
+        decisions = saved_summary.get("decisions", [])
+        summary_text = f"한 줄 요약: {one_line}\n"
+        if decisions:
+            summary_text += "결정 사항:\n" + "\n".join(f"- {d}" for d in decisions)
+
+    context_sections = []
+    if summary_text:
+        context_sections.append(f"## 회의 요약\n{summary_text}")
+    context_sections.append(f"## 안건별 쟁점\n{issues_text}")
+    context_sections.append(f"## 전체 스크립트\n{transcript}")
+    context = "\n\n".join(context_sections)
+
+    prompt = (
+        "당신은 회의 어시스턴트입니다. 아래 회의 자료를 근거로 사용자 질문에 답하세요.\n\n"
+        f"{context}\n\n"
+        f"## 사용자 질문\n{req.question}\n\n"
+        "규칙:\n"
+        "- 회의 자료에 근거한 내용만 답변. 추측하지 말 것.\n"
+        "- 자료에 없는 내용은 '회의에선 언급되지 않았어요'라고 답할 것.\n"
+        "- 한국어로 2~4문장 이내 간결히.\n\n"
+        '{"answer": "답변 내용"}'
+    )
+
+    try:
+        result = await ask_json(prompt)
+        return {"answer": result.get("answer", "") or "답변을 찾지 못했어요."}
+    except Exception as e:
+        return {"error": f"AI 호출 실패: {e}"}
+
+
+class NoteCreate(BaseModel):
+    topic_id: int
+    text: str
+
+
+@router.post("/meeting/notes")
+async def create_note(body: NoteCreate):
+    """현재 진행 중인 회의의 쟁점별 메모 저장."""
+    pipe = _get_pipeline()
+    if not pipe.meeting_id:
+        return {"error": "진행 중인 회의가 없습니다"}
+    text = (body.text or "").strip()
+    if not text:
+        return {"error": "메모 내용이 비어 있습니다"}
+    note = await db.save_note(pipe.meeting_id, body.topic_id, text)
+    return {"note": note}
+
+
+@router.get("/meeting/notes")
+async def list_notes(topic_id: int | None = None):
+    """현재 진행 중인 회의의 메모 조회. topic_id가 있으면 해당 안건만."""
+    pipe = _get_pipeline()
+    if not pipe.meeting_id:
+        return {"notes": []}
+    notes = await db.get_notes(pipe.meeting_id, topic_id)
+    return {"notes": notes}
+
+
+@router.get("/meetings/{meeting_id}/notes")
+async def list_meeting_notes(meeting_id: int, topic_id: int | None = None):
+    """특정 회의의 메모 조회 (요약 화면/히스토리용)."""
+    notes = await db.get_notes(meeting_id, topic_id)
+    return {"notes": notes}
+
+
 @router.get("/meeting/summary")
 async def get_summary():
     """현재 회의 요약 조회."""

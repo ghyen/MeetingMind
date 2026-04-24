@@ -45,8 +45,9 @@ class SpeakerIdentifier:
         동작 원리:
         1. 오디오에서 화자 임베딩(고차원 벡터)을 추출
         2. 기등록된 화자 임베딩들과 코사인 유사도 비교
-        3. 유사도가 threshold(0.5) 이상이면 기존 화자로 판정
-        4. 매칭 없으면 새 화자로 등록하고 임베딩 저장
+        3. 유사도가 threshold 이상이면 기존 화자로 판정
+        4. 매칭 없고 speaker_count < max_speakers면 새 화자로 등록
+        5. max_speakers 도달 시: 임계치 미달이어도 best match 화자 반환
         """
         if self._extractor is None or len(samples) < 1600:  # 0.1초(1600샘플) 미만은 임베딩 추출 불가
             return self._fallback_label()
@@ -64,13 +65,19 @@ class SpeakerIdentifier:
         # 등록된 화자 임베딩들과 코사인 유사도 비교 → 가장 유사한 화자 반환
         name = self._manager.search(embedding, settings.speaker_similarity_threshold)
 
-        if not name:
-            # 새 화자 등록 — 다음부터 이 임베딩과 비교하여 같은 화자 인식
-            self._speaker_count += 1
-            name = f"Speaker {self._speaker_count}"
-            self._manager.add(name, embedding)
-            logger.info("새 화자 등록: %s", name)
+        if name:
+            return name
 
+        # max_speakers 도달 시: 임계치 미달이어도 기존 화자 중 best match로 강제 할당
+        if self._speaker_count >= settings.max_speakers:
+            best = self._manager.search(embedding, -1.0)
+            return best or self._fallback_label()
+
+        # 새 화자 등록 — 다음부터 이 임베딩과 비교하여 같은 화자 인식
+        self._speaker_count += 1
+        name = f"Speaker {self._speaker_count}"
+        self._manager.add(name, embedding)
+        logger.info("새 화자 등록: %s", name)
         return name
 
     def _fallback_label(self) -> str:

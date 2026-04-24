@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     diarization_enabled: bool = True
     max_speakers: int = 10
     speaker_embedding_model: str = "models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx"
-    speaker_similarity_threshold: float = 0.5
+    speaker_similarity_threshold: float = 0.65
 
     # 토픽 감지
     topic_silence_threshold_sec: float = 3.0
@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     issue_token_threshold: int = 500  # 누적 발화 토큰 수 기준 (tiktoken cl100k_base)
 
     # 개입 트리거
-    loop_detection_count: int = 3
+    loop_detection_count: int = 10
+    loop_cooldown_min: float = 5.0  # 같은 토픽에서 loop 알림 후 쿨다운
     long_silence_sec: float = 5.0
     time_over_alert_min: float = 10.0
 

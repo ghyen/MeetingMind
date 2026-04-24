@@ -28,6 +28,7 @@ const MMI = {
   send: (p) => <svg viewBox="0 0 20 20" fill="currentColor" {...p}><path d="M3 10l14-6-6 14-2-6z"/></svg>,
   trash: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 6h12M8 6V4h4v2M6 6l1 10a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l1-10"/></svg>,
   arrowR: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 10h12M11 5l5 5-5 5"/></svg>,
+  terminal: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M5.5 8l2.5 2-2.5 2M10 13h4"/></svg>,
 };
 
 function Avatar({ s, name, size = 28, ringed = false }) {
