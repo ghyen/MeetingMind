@@ -326,8 +326,37 @@ function SettingsModal({ open, onClose, models, activeModel, onSetModel, onReset
   );
 }
 
+// ─── Summary-in-progress indicator ────────────────
+function SummaryProgress() {
+  const [sec, setSec] = sU(0);
+  sUE(() => {
+    const id = setInterval(() => setSec((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  // 60초까지는 선형으로 95%까지 채우고, 그 이후는 95%에서 대기 (실제 완료는 서버 응답에 의존)
+  const pct = Math.min(95, Math.round((sec / 60) * 95));
+  const phase = sec < 8 ? '발화 정리 중…' : sec < 25 ? '쟁점 합치고 결정 뽑는 중…' : '회의록 다듬는 중…';
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text)' }}>회의록 생성 중</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>{sec}s</div>
+      </div>
+      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-2)', marginBottom: 14 }}>{phase}</div>
+      <div style={{ height: 8, background: 'var(--surface-muted)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}>
+        <div style={{
+          width: `${pct}%`, height: '100%', background: 'var(--accent)',
+          borderRadius: 999, transition: 'width 0.6s ease',
+          backgroundImage: 'linear-gradient(90deg, var(--accent), var(--accent) 60%, rgba(255,255,255,0.25))',
+          backgroundSize: '200% 100%', animation: 'mmshimmer 1.6s linear infinite',
+        }}/>
+      </div>
+    </div>
+  );
+}
+
 // ─── Post-meeting summary screen ──────────────────
-function SummaryScreen({ meeting, summary, onBack, onNew }) {
+function SummaryScreen({ meeting, summary, loading, onBack, onNew }) {
   const { MMI, Button, Avatar } = window.MM;
   if (!meeting) return null;
   return (
@@ -346,6 +375,13 @@ function SummaryScreen({ meeting, summary, onBack, onNew }) {
           <Button variant="secondary" icon={<MMI.upload width="14" height="14"/>}>PDF로 저장</Button>
           <Button variant="ghost" onClick={onNew}>새 회의 시작</Button>
         </div>
+
+        {loading && <SummaryProgress/>}
+        {!loading && !summary && (
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, color: 'var(--text-3)', fontSize: 'var(--fs-sm)' }}>
+            요약을 생성하지 못했어요. 네트워크나 LLM 설정을 확인한 뒤 새 회의로 다시 시도해 보세요.
+          </div>
+        )}
 
         {summary?.one_line && (
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 24 }}>
@@ -388,4 +424,4 @@ function SummaryScreen({ meeting, summary, onBack, onNew }) {
 }
 
 window.MM = window.MM || {};
-Object.assign(window.MM, { TopBar, Sidebar, AgendaTabs, RecordBar, MicLevel, StartScreen, SettingsModal, SummaryScreen });
+Object.assign(window.MM, { TopBar, Sidebar, AgendaTabs, RecordBar, MicLevel, StartScreen, SettingsModal, SummaryScreen, SummaryProgress });

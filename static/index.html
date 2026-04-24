@@ -12,6 +12,7 @@
   @keyframes mmpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   @keyframes mmwave { from { transform: scaleY(0.3); } to { transform: scaleY(1); } }
   @keyframes mmfade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes mmshimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   button { font-family: inherit; }
   input, textarea { font-family: inherit; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -27,15 +28,15 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
 <!-- Foundations -->
-<script src="app/theme.js"></script>
-<script src="app/api.js"></script>
+<script src="app/theme.js?v=2"></script>
+<script src="app/api.js?v=2"></script>
 <!-- UI primitives -->
-<script type="text/babel" src="app/atoms.jsx"></script>
+<script type="text/babel" src="app/atoms.jsx?v=2"></script>
 <!-- Panels -->
-<script type="text/babel" src="app/Transcript.jsx"></script>
-<script type="text/babel" src="app/IssueCard.jsx"></script>
-<script type="text/babel" src="app/RightRail.jsx"></script>
-<script type="text/babel" src="app/Chrome.jsx"></script>
+<script type="text/babel" src="app/Transcript.jsx?v=2"></script>
+<script type="text/babel" src="app/IssueCard.jsx?v=2"></script>
+<script type="text/babel" src="app/RightRail.jsx?v=2"></script>
+<script type="text/babel" src="app/Chrome.jsx?v=2"></script>
 
 <!-- Mock data (fallback when backend is absent) -->
 <script>
@@ -144,6 +145,7 @@ function App() {
   const [models, setModels] = useState(null);
   const [activeModel, setActiveModel] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
   const [timer, setTime] = useTimer(recording && !paused);
 
   const hasBackend = useBackend();
@@ -262,16 +264,20 @@ function App() {
     if (audioRef.current) audioRef.current.stop();
     if (wsRef.current) wsRef.current.close();
     setRecording(false); setPaused(false);
+    setSummary(null);
+    setRoute('summary');
     if (hasBackend) {
+      setSummaryLoading(true);
       window.MM.api.endMeeting().then((r) => {
         setSummary(r.summary || null);
+        setSummaryLoading(false);
         window.MM.api.listMeetings().then((res) => {
           if (res.meetings) setState((prev) => ({ ...prev, meetings_history: res.meetings.map((m) => ({
             id: m.id, title: m.title || '(제목 없음)',
             date: m.started_at ? m.started_at.slice(0, 16).replace('T', ' ') : '',
           })) }));
         }).catch(() => {});
-      }).catch(() => {});
+      }).catch(() => { setSummaryLoading(false); });
     } else {
       setSummary({
         one_line: '결제 지연 대응을 위해 PG사 교체를 우선 진행하고, 내부 모듈 개발은 Q3 OKR로 검토하기로 결정.',
@@ -283,7 +289,6 @@ function App() {
         ],
       });
     }
-    setRoute('summary');
   }
 
   function resetAll() {
@@ -410,7 +415,7 @@ function App() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <TopBar title={state.meeting?.title || '완료된 회의'} recording={false} connected={connected}
             onOpenSettings={() => setSettingsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
-          <SummaryScreen meeting={state.meeting} summary={summary}
+          <SummaryScreen meeting={state.meeting} summary={summary} loading={summaryLoading}
             onBack={() => setRoute('live')} onNew={() => setRoute('start')}/>
         </div>
         <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} models={models} activeModel={activeModel} onSetModel={setModel} onReset={resetAll}/>

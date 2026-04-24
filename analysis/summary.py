@@ -22,6 +22,7 @@ _SUMMARY_PROMPT = """\
 
 ## 출력 형식 (JSON)
 {{
+  "one_line": "회의 전체를 한 문장으로 요약 (60자 이내)",
   "title": "회의 내용을 대표하는 제목 (15자 이내)",
   "participants": ["화자1", "화자2"],
   "topics": [
@@ -32,16 +33,18 @@ _SUMMARY_PROMPT = """\
       "open_questions": ["미결 이슈"]
     }}
   ],
+  "decisions": ["주요 결정 사항 목록"],
   "action_items": [
-    {{"assignee": "담당자", "task": "할 일", "topic": "관련 안건"}}
-  ],
-  "key_decisions": ["주요 결정 사항 목록"]
+    {{"speaker": "Speaker N", "who": "담당자 실명 또는 미정", "task": "할 일", "due": "기한 (없으면 null)"}}
+  ]
 }}
 
 규칙:
 - 발화 기록에 근거한 내용만 작성. 추측하지 마세요.
-- action_items의 assignee는 발화에서 명시적으로 담당자가 언급된 경우에만 기재. 불명확하면 "미정"으로.
-- 결정된 사항이 없는 안건은 decision을 null로.
+- action_items의 who는 발화에서 명시적으로 담당자가 언급된 경우에만 기재. 불명확하면 "미정"으로.
+- action_items의 speaker는 해당 담당자의 화자 라벨(예: "Speaker 2"). 불명확하면 null.
+- action_items의 due는 발화에 기한이 언급된 경우에만 기재 (예: "이번 주 금요일"). 없으면 null.
+- 결정된 사항이 없는 안건은 topics[].decision을 null로.
 - JSON만 출력하세요.
 """
 
