@@ -30,14 +30,14 @@
 
 <!-- Foundations -->
 <script src="app/theme.js?v=2"></script>
-<script src="app/api.js?v=2"></script>
+<script src="app/api.js?v=3"></script>
 <!-- UI primitives -->
 <script type="text/babel" src="app/atoms.jsx?v=2"></script>
 <!-- Panels -->
 <script type="text/babel" src="app/Transcript.jsx?v=2"></script>
 <script type="text/babel" src="app/IssueCard.jsx?v=2"></script>
 <script type="text/babel" src="app/RightRail.jsx?v=2"></script>
-<script type="text/babel" src="app/Chrome.jsx?v=2"></script>
+<script type="text/babel" src="app/Chrome.jsx?v=3"></script>
 
 <!-- Mock data (fallback when backend is absent) -->
 <script>
@@ -123,12 +123,27 @@ function useBackend() {
   return hasBackend;
 }
 
+function getStartState(prev) {
+  const mock = window.MM.MOCK_STATE || {};
+  return {
+    ...mock,
+    meeting: null,
+    utterances: [],
+    topics: [],
+    issues: {},
+    interventions: [],
+    references: [],
+    speaker_names: {},
+    issue_tokens: {},
+    meetings_history: prev?.meetings_history || mock.meetings_history || [],
+  };
+}
+
 function App() {
   // Route: 'start' | 'live' | 'summary'
-  const [route, setRoute] = useState(() => localStorage.getItem('mm_route') || 'start');
-  useEffect(() => localStorage.setItem('mm_route', route), [route]);
+  const [route, setRoute] = useState('start');
 
-  const [state, setState] = useState(window.MM.MOCK_STATE);
+  const [state, setState] = useState(() => getStartState());
   const [activeTopicId, setActiveTopicId] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem('mm_sidebar') !== 'closed');
   const toggleSidebar = () => setSidebarOpen((o) => { localStorage.setItem('mm_sidebar', o ? 'closed' : 'open'); return !o; });
@@ -142,6 +157,7 @@ function App() {
   const [muted, setMuted] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [connected, setConnected] = useState(true);
+  const [calibration, setCalibration] = useState({ state: 'idle', threshold: null });
   const [partialText, setPartialText] = useState('');
   const [partialSpeaker, setPartialSpeaker] = useState('');
   const [level, setLevel] = useState(0);
@@ -154,6 +170,7 @@ function App() {
   const audioRef = useRef(null);
   const wsRef = useRef(null);
   const historyViewRef = useRef(false);
+  const lastTopicCountRef = useRef(0);
 
   // ── CSS vars mount ───────────────────────────────────
   const css = isDark ? window.MM.applyDarkTheme() : window.MM.applyLightTheme();
@@ -177,7 +194,17 @@ function App() {
           issue_tokens: s.issue_tokens || {},
           issue_token_threshold: s.issue_token_threshold || prev.issue_token_threshold || 500,
         }));
-        if (s.topics?.length) setActiveTopicId(s.topics[s.topics.length - 1].id);
+        // 새 안건이 추가됐을 때만 자동 전환. 매 폴링마다 강제 전환하면 사용자가 다른 탭으로 이동할 수 없음.
+        const topics = s.topics || [];
+        const count = topics.length;
+        const grew = count > lastTopicCountRef.current;
+        lastTopicCountRef.current = count;
+        if (grew && count) {
+          setActiveTopicId(topics[count - 1].id);
+        } else if (count) {
+          // 현재 활성 안건이 사라졌으면 마지막 안건으로 폴백
+          setActiveTopicId((cur) => (topics.some((t) => t.id === cur) ? cur : topics[count - 1].id));
+        }
       } catch (e) { setConnected(false); }
     }
     tick();
@@ -233,14 +260,42 @@ function App() {
   // ── Actions ─────────────────────────────────────────
   const MOCK_SPEAKER_NAMES = { 'Speaker 1': '김지연', 'Speaker 2': '박민호', 'Speaker 3': '이서준', 'Speaker 4': '최하늘' };
 
-  function startMeeting({ title }) {
+  function openNewMeeting() {
+    if (audioRef.current) audioRef.current.stop();
+    if (wsRef.current) wsRef.current.close();
+    historyViewRef.current = false;
+    setRecording(false);
+    setPaused(false);
+    setMuted(false);
+    setAnalyzing(false);
+    setCalibration({ state: 'idle', threshold: null });
+    setPartialText('');
+    setPartialSpeaker('');
+    setLevel(0);
+    setBookmarks([]);
+    setSummary(null);
+    setSummaryLoading(false);
+    setNotesByTopic({});
+    setActiveTopicId(1);
+    lastTopicCountRef.current = 0;
+    setTime(0);
+    setState((prev) => getStartState(prev));
+    setRoute('start');
+  }
+
+  function startMeeting({ title, calibrationThreshold = null } = {}) {
+    const initialCalibrationThreshold = Number.isFinite(calibrationThreshold) ? calibrationThreshold : null;
+    setCalibration(initialCalibrationThreshold != null
+      ? { state: hasBackend ? 'pending' : 'done', threshold: initialCalibrationThreshold }
+      : { state: 'idle', threshold: null });
     setState((s) => ({
       ...s,
-      meeting: { ...(s.meeting || {}), title: title || '새 회의', created_at: new Date().toLocaleString('ko-KR'), active: true },
+      meeting: { id: null, title: title || '새 회의', created_at: new Date().toLocaleString('ko-KR'), active: true },
       speaker_names: { ...MOCK_SPEAKER_NAMES },
       utterances: [], topics: [], issues: {}, interventions: [], references: [],
     }));
     historyViewRef.current = false;
+    lastTopicCountRef.current = 0;
     setRecording(true); setPaused(false);
     setTime(0);
     setRoute('live');
@@ -250,6 +305,15 @@ function App() {
       }).catch(() => {});
       // WS (real audio)
       const ws = new window.MM.WS('/ws/audio');
+      let appliedInitialCalibration = false;
+      const applyInitialCalibration = () => {
+        if (appliedInitialCalibration || initialCalibrationThreshold == null) return;
+        appliedInitialCalibration = true;
+        const sent = ws.send(`calibrate:${initialCalibrationThreshold.toFixed(6)}`);
+        setCalibration(sent
+          ? { state: 'done', threshold: initialCalibrationThreshold }
+          : { state: 'error', threshold: null });
+      };
       wsRef.current = ws;
       ws.onOpen(() => { setConnected(true); });
       ws.onClose(() => setConnected(false));
@@ -270,6 +334,12 @@ function App() {
           setAnalyzing(false);
         } else if (m.type === 'status') {
           setAnalyzing(m.state === 'analyzing');
+        } else if (m.type === 'calibrating') {
+          setCalibration({ state: 'calibrating', threshold: null });
+        } else if (m.type === 'calibrated') {
+          setCalibration({ state: 'done', threshold: Number.isFinite(m.threshold) ? m.threshold : null });
+        } else if (m.type === 'ready') {
+          applyInitialCalibration();
         }
       });
       ws.connect();
@@ -313,9 +383,10 @@ function App() {
   function resetAll() {
     if (audioRef.current) audioRef.current.stop();
     if (wsRef.current) wsRef.current.close();
-    setRecording(false); setPaused(false);
+    setRecording(false); setPaused(false); setMuted(false);
+    setCalibration({ state: 'idle', threshold: null });
     if (hasBackend) window.MM.api.reset().catch(() => {});
-    setState(window.MM.MOCK_STATE);
+    setState((prev) => getStartState(prev));
     setNotesByTopic({});
     setRoute('start');
   }
@@ -358,13 +429,25 @@ function App() {
   }
 
   function renameTopic(id, title) {
-    setState((s) => ({ ...s, topics: s.topics.map((t) => (t.id === id ? { ...t, title } : t)) }));
+    const trimmed = (title || '').trim() || '안건';
+    setState((s) => ({ ...s, topics: s.topics.map((t) => (t.id === id ? { ...t, title: trimmed } : t)) }));
+    if (hasBackend) window.MM.api.renameTopic(id, trimmed).catch(() => {});
   }
 
-  function addTopic() {
-    const id = Math.max(0, ...state.topics.map((t) => t.id)) + 1;
-    setState((s) => ({ ...s, topics: [...s.topics, { id, title: `안건 ${id}`, start_time: null, end_time: null, utterances: [] }] }));
-    setActiveTopicId(id);
+  async function addTopic() {
+    const fallbackId = Math.max(0, ...state.topics.map((t) => t.id)) + 1;
+    if (hasBackend) {
+      try {
+        const r = await window.MM.api.addTopic(`안건 ${fallbackId}`);
+        if (r?.topic) {
+          setState((s) => ({ ...s, topics: [...s.topics, r.topic] }));
+          setActiveTopicId(r.topic.id);
+          return;
+        }
+      } catch {}
+    }
+    setState((s) => ({ ...s, topics: [...s.topics, { id: fallbackId, title: `안건 ${fallbackId}`, start_time: null, end_time: null, utterances: [] }] }));
+    setActiveTopicId(fallbackId);
   }
 
   function updateIssue(topicId, patch) {
@@ -400,6 +483,11 @@ function App() {
     setBookmarks((b) => (b.includes(i) ? b.filter((x) => x !== i) : [...b, i]));
   }
 
+  function calibrateLiveMic() {
+    const sent = audioRef.current?.calibrate?.() || wsRef.current?.send?.('calibrate');
+    setCalibration(sent ? { state: 'calibrating', threshold: null } : { state: 'error', threshold: null });
+  }
+
   async function loadMeeting(id) {
     if (!hasBackend || !id) return;
     try {
@@ -409,6 +497,7 @@ function App() {
       if (wsRef.current) wsRef.current.close();
       historyViewRef.current = true;
       setRecording(false); setPaused(false);
+      setCalibration({ state: 'idle', threshold: null });
       const m = data.meeting || {};
       setState((prev) => ({
         ...prev,
@@ -426,6 +515,7 @@ function App() {
       }
       setNotesByTopic(grouped);
       if ((data.topics || []).length) setActiveTopicId(data.topics[data.topics.length - 1].id);
+      lastTopicCountRef.current = (data.topics || []).length;
       setRoute('live');
     } catch {}
   }
@@ -439,7 +529,7 @@ function App() {
   if (route === 'start') {
     return (
       <div style={{ ...css, display: 'flex', height: '100vh', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'var(--font)' }}>
-        <Sidebar {...sidebarProps} onNew={() => {}} onSelect={loadMeeting}/>
+        <Sidebar {...sidebarProps} onNew={openNewMeeting} onSelect={loadMeeting}/>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <TopBar title="새 회의" recording={false} connected={connected}
             onOpenLogs={() => setLogsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
@@ -460,13 +550,13 @@ function App() {
   if (route === 'summary') {
     return (
       <div style={{ ...css, display: 'flex', height: '100vh', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'var(--font)' }}>
-        <Sidebar {...sidebarProps} onNew={() => setRoute('start')} onSelect={loadMeeting}/>
+        <Sidebar {...sidebarProps} onNew={openNewMeeting} onSelect={loadMeeting}/>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <TopBar title={state.meeting?.title || '완료된 회의'} recording={false} connected={connected}
             onOpenLogs={() => setLogsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
           <SummaryScreen meeting={state.meeting} summary={summary} loading={summaryLoading}
             issues={state.issues} topics={state.topics} notesByTopic={notesByTopic}
-            onBack={() => setRoute('live')} onNew={() => setRoute('start')}/>
+            onBack={() => setRoute('live')} onNew={openNewMeeting}/>
         </div>
         <LogsModal {...logsProps}/>
       </div>
@@ -476,7 +566,7 @@ function App() {
   // ── LIVE SCREEN ──────────────────────────────────
   return (
     <div style={{ ...css, display: 'flex', height: '100vh', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'var(--font)' }}>
-      <Sidebar {...sidebarProps} onNew={() => setRoute('start')} onSelect={loadMeeting}/>
+      <Sidebar {...sidebarProps} onNew={openNewMeeting} onSelect={loadMeeting}/>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TopBar title={state.meeting?.title} onTitleChange={(t) => setState((s) => ({ ...s, meeting: { ...s.meeting, title: t } }))}
           recording={recording} analyzing={analyzing} connected={connected}
@@ -525,6 +615,8 @@ function App() {
             <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 20 }}>
               <RecordBar recording={recording} paused={paused} onPause={() => setPaused((p) => !p)}
                 timer={timer} level={level} muted={muted} onToggleMute={() => setMuted((m) => !m)}
+                onCalibrate={hasBackend ? calibrateLiveMic : null}
+                calibrationState={calibration.state} calibrationThreshold={calibration.threshold}
                 onEnd={endMeeting}/>
             </div>
           )}

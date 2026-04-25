@@ -40,13 +40,13 @@ class IssueStructurer:
         self._pending: dict[int, list[Utterance]] = {}
         self._pending_tokens: dict[int, int] = {}
 
-    async def update(self, topic: Topic, new_utterance: Utterance) -> IssueGraph:
+    async def update(self, topic: Topic, new_utterance: Utterance) -> IssueGraph | None:
         """새 발화를 반영하여 쟁점 구조 점진적 업데이트.
 
         매 발화마다 LLM을 호출하면 비용과 지연이 크므로 배치 전략 사용:
         - 첫 발화: 즉시 _create_initial()로 초기 구조 생성
         - 이후: pending 큐에 축적 → 누적 토큰 수가 임계치를 넘으면 _apply_delta()로 일괄 반영
-        - 임계치 미만: 기존 구조를 그대로 반환 (LLM 호출 안 함)
+        - 임계치 미만: None 반환 (LLM 호출 안 함, 호출자는 변경 없음을 의미)
         """
         existing = self._cache.get(topic.id)
         self._pending.setdefault(topic.id, []).append(new_utterance)
@@ -63,7 +63,7 @@ class IssueStructurer:
             self._pending[topic.id] = []
             self._pending_tokens[topic.id] = 0
         else:
-            return existing
+            return None
 
         self._cache[topic.id] = issue
         return issue

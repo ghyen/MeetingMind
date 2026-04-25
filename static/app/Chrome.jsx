@@ -2,8 +2,16 @@
 
 const { useState: sU, useEffect: sUE } = React;
 
+function calibrationNoiseLabel(threshold) {
+  if (threshold == null) return '';
+  if (threshold < 0.01) return '매우 조용함';
+  if (threshold < 0.03) return '보통';
+  if (threshold < 0.06) return '소음 있음';
+  return '소음 많음';
+}
+
 // ─── Top bar ───────────────────────────────────────
-function TopBar({ title, onTitleChange, onOpenHistory, onOpenLogs, analyzing, connected, recording, isDark, onToggleTheme }) {
+function TopBar({ title, onTitleChange, onOpenLogs, analyzing, connected, recording, isDark, onToggleTheme }) {
   const { MMI, IconButton, Pill, InlineEdit } = window.MM;
   return (
     <div style={{
@@ -29,7 +37,6 @@ function TopBar({ title, onTitleChange, onOpenHistory, onOpenLogs, analyzing, co
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {analyzing && <Pill tone="accent" size="xs">분석 중</Pill>}
         {!connected && <Pill tone="warning" size="xs">재연결 중</Pill>}
-        <IconButton label="히스토리" onClick={onOpenHistory}><MMI.doc width="16" height="16"/></IconButton>
         <IconButton label={isDark ? '라이트 모드' : '다크 모드'} onClick={onToggleTheme}>
           {isDark ? <MMI.sun width="16" height="16"/> : <MMI.moon width="16" height="16"/>}
         </IconButton>
@@ -61,9 +68,6 @@ function Sidebar({ meetings, activeId, onSelect, onNew, open = true, onToggleOpe
         }}>
           <MMI.plus width="14" height="14"/>
         </button>
-        <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 12, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.02em', marginTop: 6 }}>
-          회의 {meetings.length}
-        </div>
       </div>
     );
   }
@@ -152,8 +156,11 @@ function AgendaTabs({ topics, activeId, onSelect, onAdd, onRename }) {
 }
 
 // ─── Record bar (floating pill) ────────────────────
-function RecordBar({ recording, onStop, onPause, paused, timer, level, muted, onToggleMute, onEnd }) {
-  const { MMI, Button } = window.MM;
+function RecordBar({ recording, onStop, onPause, paused, timer, level, muted, onToggleMute, onEnd, onCalibrate, calibrationState = 'idle', calibrationThreshold = null }) {
+  const { MMI, Button, Pill } = window.MM;
+  const calibrating = calibrationState === 'calibrating';
+  const applying = calibrationState === 'pending';
+  const calibrated = calibrationState === 'done';
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 14,
@@ -181,6 +188,17 @@ function RecordBar({ recording, onStop, onPause, paused, timer, level, muted, on
       </div>
       <div style={{ width: 1, height: 28, background: 'var(--border)' }}/>
       <MicLevel level={level} active={recording && !paused && !muted}/>
+      <div style={{ width: 1, height: 28, background: 'var(--border)' }}/>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <Button variant={calibrated ? 'outline' : 'secondary'} size="sm" onClick={onCalibrate}
+          disabled={!onCalibrate || calibrating || applying || !recording}
+          style={{ minWidth: 76 }}
+          icon={calibrated ? <MMI.check width="12" height="12"/> : <MMI.settings width="12" height="12"/>}>
+          {applying ? '적용 중' : calibrating ? '측정 중' : '보정'}
+        </Button>
+        {calibrated && <Pill tone="positive" size="xs">{calibrationThreshold != null ? calibrationThreshold.toFixed(4) : '완료'}</Pill>}
+        {calibrationState === 'error' && <Pill tone="danger" size="xs">실패</Pill>}
+      </div>
       <div style={{ width: 1, height: 28, background: 'var(--border)' }}/>
       <button onClick={onToggleMute} style={{
         padding: '8px 12px', borderRadius: 999, border: '1px solid var(--border-strong)',
@@ -222,12 +240,17 @@ function StartScreen({ onStart, onUpload }) {
   const [level, setLevel] = sU(0);
   const [err, setErr] = sU('');
   const [title, setTitle] = sU('');
+  const [calibrationState, setCalibrationState] = sU('idle'); // idle | calibrating | done | error
+  const [calibrationThreshold, setCalibrationThreshold] = sU(null);
   const streamRef = React.useRef(null);
   const ctxRef = React.useRef(null);
+  const analyserRef = React.useRef(null);
   const rafRef = React.useRef(null);
 
   async function checkMic() {
     setStage('checking'); setErr('');
+    setCalibrationState('idle');
+    setCalibrationThreshold(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -236,6 +259,7 @@ function StartScreen({ onStart, onUpload }) {
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
+      analyserRef.current = analyser;
       src.connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
       const loop = () => {
@@ -253,18 +277,51 @@ function StartScreen({ onStart, onUpload }) {
     }
   }
 
+  async function calibrateMic() {
+    const analyser = analyserRef.current;
+    if (!analyser) return;
+    setCalibrationState('calibrating');
+    setCalibrationThreshold(null);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const samples = [];
+    const started = performance.now();
+    await new Promise((resolve) => {
+      const tick = () => {
+        if (analyserRef.current !== analyser) { resolve(); return; }
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+          const v = (data[i] - 128) / 128;
+          sum += v * v;
+        }
+        samples.push(Math.sqrt(sum / data.length));
+        if (performance.now() - started >= 2000) resolve();
+        else setTimeout(tick, 100);
+      };
+      tick();
+    });
+    if (!samples.length || analyserRef.current !== analyser) {
+      setCalibrationState('error');
+      return;
+    }
+    const avgRms = samples.reduce((sum, v) => sum + v, 0) / samples.length;
+    const threshold = Math.max(avgRms * 3, 0.005);
+    setCalibrationThreshold(threshold);
+    setCalibrationState('done');
+  }
+
   function cleanup() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
     if (ctxRef.current) ctxRef.current.close();
-    streamRef.current = ctxRef.current = null;
+    streamRef.current = ctxRef.current = analyserRef.current = null;
   }
 
   React.useEffect(() => cleanup, []);
 
   function start() {
     cleanup();
-    onStart && onStart({ title: title.trim() || null });
+    onStart && onStart({ title: title.trim() || null, calibrationThreshold });
   }
 
   return (
@@ -298,6 +355,23 @@ function StartScreen({ onStart, onUpload }) {
           {stage === 'ready' && <Button variant="secondary" size="sm" onClick={checkMic} style={{ marginTop: 12 }} icon={<MMI.mic width="12" height="12"/>}>마이크 확인하기</Button>}
           {stage === 'checking' && <div style={{ marginTop: 8, fontSize: 'var(--fs-xs)', color: 'var(--text-3)' }}>권한을 요청하는 중...</div>}
           {stage === 'error' && <Button variant="secondary" size="sm" onClick={checkMic} style={{ marginTop: 12 }}>다시 시도</Button>}
+          {stage === 'ok' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+              <Button variant={calibrationState === 'done' ? 'outline' : 'secondary'} size="sm"
+                onClick={calibrateMic} disabled={calibrationState === 'calibrating'}
+                icon={calibrationState === 'done' ? <MMI.check width="12" height="12"/> : <MMI.settings width="12" height="12"/>}>
+                {calibrationState === 'calibrating' ? '소음 측정 중' : '소음 보정'}
+              </Button>
+              {calibrationState === 'done' && (
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--positive)', fontWeight: 600 }}>
+                  완료 · {calibrationNoiseLabel(calibrationThreshold)} · {calibrationThreshold.toFixed(4)}
+                </span>
+              )}
+              {calibrationState === 'error' && (
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--danger)', fontWeight: 600 }}>보정 실패</span>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>

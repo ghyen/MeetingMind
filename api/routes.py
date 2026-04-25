@@ -199,6 +199,60 @@ async def get_topics():
     return {"topics": _serialize(_get_pipeline().state.topics)}
 
 
+class TopicTitleRequest(BaseModel):
+    title: str
+
+
+@router.put("/meeting/topics/{topic_id}")
+async def rename_topic(topic_id: int, body: TopicTitleRequest):
+    """안건 제목 수정 — 인메모리(state.topics + topic_detector.segments) + DB 동기화."""
+    pipe = _get_pipeline()
+    title = body.title.strip() or "안건"
+    found = False
+    for t in pipe.state.topics:
+        if t.id == topic_id:
+            t.title = title
+            found = True
+    for t in pipe.topic_detector.segments:
+        if t.id == topic_id:
+            t.title = title
+            found = True
+    if not found:
+        return {"error": "해당 안건을 찾을 수 없습니다"}
+    if pipe.meeting_id:
+        await db.update_topic_title(pipe.meeting_id, topic_id, title)
+    return {"ok": True, "topic_id": topic_id, "title": title}
+
+
+class TopicCreateRequest(BaseModel):
+    title: str = "새 안건"
+
+
+@router.post("/meeting/topics")
+async def create_topic(body: TopicCreateRequest):
+    """수동 안건 추가 — 이전 안건 종료 후 새 안건 시작."""
+    from models import Topic
+    pipe = _get_pipeline()
+    detector = pipe.topic_detector
+    title = (body.title or "").strip() or "새 안건"
+    start = pipe.state.utterances[-1].time if pipe.state.utterances else "00:00:00"
+    detector._topic_counter += 1
+    new_topic = Topic(id=detector._topic_counter, title=title, start_time=start)
+    if detector.segments:
+        detector.segments[-1].end_time = start
+    detector.segments.append(new_topic)
+    if pipe.state.topics:
+        pipe.state.topics[-1].end_time = start
+    pipe.state.topics.append(new_topic)
+    if pipe.meeting_id:
+        if len(pipe.state.topics) >= 2:
+            prev = pipe.state.topics[-2]
+            if prev.end_time:
+                await db.update_topic_end_time(pipe.meeting_id, prev.id, prev.end_time)
+        await db.save_topic(pipe.meeting_id, new_topic.id, title, start)
+    return {"topic": _serialize(new_topic)}
+
+
 @router.get("/meeting/issues/{topic_id}")
 async def get_issue(topic_id: int):
     """특정 안건의 쟁점 구조 조회."""

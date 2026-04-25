@@ -14,13 +14,19 @@ function TranscriptPanel({ utterances, live, speakerNames, onRenameSpeaker, onJu
   const filtered = query
     ? utterances.filter((u) => u.text.includes(query) || (speakerNames[u.speaker] || '').includes(query))
     : utterances;
+  const speakerCount = new Set(
+    utterances
+      .map((u) => u.speaker)
+      .concat(partialSpeaker ? [partialSpeaker] : [])
+      .filter(Boolean)
+  ).size;
 
   return (
     <div style={{ width: 340, background: 'var(--surface)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0, flexShrink: 0 }}>
       <div style={{ padding: '14px 18px 10px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>실시간 스크립트</div>
         <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-3)', marginTop: 2 }}>
-          {utterances.length}개 발화 · {Object.keys(speakerNames || {}).length || 0}명
+          {utterances.length}개 발화 · {speakerCount}명
           {analyzing && <span style={{ marginLeft: 8, color: 'var(--accent)' }}>● 분석 중</span>}
         </div>
       </div>

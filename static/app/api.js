@@ -18,6 +18,8 @@
     state() { return this._req('/api/meeting/state'); },
     simulate(body) { return this._req('/api/meeting/simulate', { method: 'POST', body: JSON.stringify(body) }); },
     updateIssue(topicId, body) { return this._req(`/api/meeting/issues/${topicId}`, { method: 'PUT', body: JSON.stringify(body) }); },
+    renameTopic(topicId, title) { return this._req(`/api/meeting/topics/${topicId}`, { method: 'PUT', body: JSON.stringify({ title }) }); },
+    addTopic(title) { return this._req('/api/meeting/topics', { method: 'POST', body: JSON.stringify({ title: title || '새 안건' }) }); },
     summary() { return this._req('/api/meeting/summary'); },
     ask(question) { return this._req('/api/meeting/ask', { method: 'POST', body: JSON.stringify({ question }) }); },
     reset() { return this._req('/api/meeting/reset', { method: 'POST' }); },
@@ -125,7 +127,11 @@
       this.level = 0;
     }
     setMuted(m) { this.muted = m; if (m) this.level = 0; }
-    calibrate() { this.ws.send('calibrate'); }
+    calibrate() { return this.ws.send('calibrate'); }
+    applyCalibrationThreshold(threshold) {
+      if (!Number.isFinite(threshold)) return false;
+      return this.ws.send(`calibrate:${threshold.toFixed(6)}`);
+    }
   }
 
   window.MM = window.MM || {};

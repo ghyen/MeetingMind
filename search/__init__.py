@@ -13,7 +13,7 @@ import chromadb
 
 from analysis.llm import ask_json
 from config import settings
-from models import Reference, Utterance
+from models import IssueGraph, Reference, Topic, Utterance
 
 logger = logging.getLogger(__name__)
 
@@ -182,3 +182,34 @@ class ReferenceCollector:
         combined = internal_results + web_results
         combined.sort(key=lambda r: r.relevance_score, reverse=True)
         return combined
+
+    async def search_for_issue(
+        self, topic: Topic, issue: IssueGraph, top_k: int = 3
+    ) -> list[Reference]:
+        """쟁점 구조(요약본) 기준 1회 검색.
+
+        쿼리: "{안건 제목} {쟁점 토픽} {첫 open_question}"
+        쟁점 구조가 갱신될 때마다 호출되도록 설계 → 발화당 호출 대비 빈도 ↓
+        """
+        query = self._build_issue_query(topic, issue)
+        if not query or query in self._query_cache:
+            return []
+        self._query_cache.add(query)
+        internal_results, web_results = await asyncio.gather(
+            self.internal.search(query, top_k),
+            self.web.search(query, top_k),
+        )
+        combined = internal_results + web_results
+        combined.sort(key=lambda r: r.relevance_score, reverse=True)
+        return combined
+
+    @staticmethod
+    def _build_issue_query(topic: Topic, issue: IssueGraph) -> str:
+        parts: list[str] = []
+        if topic.title:
+            parts.append(topic.title)
+        if issue.topic and issue.topic != topic.title:
+            parts.append(issue.topic)
+        if issue.open_questions:
+            parts.append(issue.open_questions[0])
+        return " ".join(p.strip() for p in parts if p and p.strip()).strip()

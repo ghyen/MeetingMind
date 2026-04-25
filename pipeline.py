@@ -54,6 +54,20 @@ class _StepCtx:
         self._steps.append((self._name, time.perf_counter() - self._start))
 
 
+def _parse_time_str(t: str) -> float | None:
+    """'HH:MM:SS' 또는 'HH:MM:SS.mmm' → 초. 파싱 실패 시 None."""
+    if not t:
+        return None
+    try:
+        parts = t.split(":")
+        if len(parts) != 3:
+            return None
+        h, m, s = parts
+        return int(h) * 3600 + int(m) * 60 + float(s)
+    except (ValueError, TypeError):
+        return None
+
+
 @dataclass
 class MeetingState:
     """회의 전체 상태."""
@@ -78,9 +92,10 @@ class Pipeline:
         self._topic_detector = None
         self._issue_structurer = None
         self._trigger_detector = None
-        self._entity_extractor = None
         self._reference_collector = None
         self._stt_corrector = None
+        # 직전 발화의 스트림 경과초 — 발화 간격으로 침묵 길이 추정
+        self._last_utterance_seconds: float | None = None
 
     def add_listener(self, callback) -> None:
         """상태 변경 시 호출할 콜백 등록."""
@@ -113,13 +128,6 @@ class Pipeline:
             from analysis.triggers import TriggerDetector
             self._trigger_detector = TriggerDetector()
         return self._trigger_detector
-
-    @property
-    def entity_extractor(self):
-        if self._entity_extractor is None:
-            from search import EntityExtractor
-            self._entity_extractor = EntityExtractor()
-        return self._entity_extractor
 
     @property
     def reference_collector(self):
@@ -157,9 +165,12 @@ class Pipeline:
         self.topic_detector._topic_counter = 0
         self.topic_detector.segments = []
         self.topic_detector._recent = []
+        self.topic_detector._last_silence_ms = 0.0
+        self.topic_detector._utterances_since_last_check = 0
         self.issue_structurer._cache = {}
         self.issue_structurer._pending = {}
         self._stt_corrector = None
+        self._last_utterance_seconds = None
 
         self.meeting_id = await db.create_meeting(title=title, audio_path=audio_path)
         # 회의 컨텍스트 설정 → STT 교정에 활용
@@ -228,10 +239,20 @@ class Pipeline:
         async with timer.step("STT교정"):
             await self._correct_stt(utterance)
 
-        # 2) 토픽 전환 감지 — 3단계 필터(키워드→키워드2개+→LLM)로 판단
+        # 2) 토픽 전환 감지 — 3단계 필터(키워드→키워드2개+→LLM) + N발화마다 강제 LLM 판정
+        # 직전 발화와의 시간 간격을 침묵 길이 추정치로 TopicDetector에 주입
         new_topic = None
         async with timer.step("토픽감지"):
             try:
+                cur_seconds = _parse_time_str(utterance.time)
+                if cur_seconds is not None and self._last_utterance_seconds is not None:
+                    gap_ms = max(0.0, (cur_seconds - self._last_utterance_seconds) * 1000.0)
+                    self.topic_detector._last_silence_ms = gap_ms
+                else:
+                    self.topic_detector._last_silence_ms = 0.0
+                if cur_seconds is not None:
+                    self._last_utterance_seconds = cur_seconds
+
                 new_topic = await self.topic_detector.check(utterance)
                 if new_topic:
                     self.state.topics.append(new_topic)
@@ -248,28 +269,14 @@ class Pipeline:
         async with timer.step("트리거감지"):
             await self._check_triggers(utterance)
 
-        # 쟁점구조화·자료수집은 LLM 호출이 필요하므로 asyncio.gather로 병렬 실행.
-        # - OpenRouter 등 외부 API: 기본적으로 동시 요청 허용
-        # - Ollama: OLLAMA_NUM_PARALLEL>=2 환경변수로 동시 처리 활성화
-        #   (기본값 1이면 서버에서 큐잉되나 클라이언트 gather는 무해)
-        t_issues = time.perf_counter()
-        t_refs = time.perf_counter()
+        # 쟁점구조화 → 갱신된 경우에만 자료수집 (요약본 기준 검색).
+        # 발화당 검색이 아니라 issue_token_threshold마다 1회 → 웹 호출 대폭 감소.
+        async with timer.step("쟁점구조화"):
+            updated_issue = await self._update_issues(utterance)
 
-        async def _timed_issues():
-            nonlocal t_issues
-            await self._update_issues(utterance)
-            t_issues = time.perf_counter() - t_issues
-
-        async def _timed_refs():
-            nonlocal t_refs
-            await self._search_references(utterance)
-            t_refs = time.perf_counter() - t_refs
-
-        await asyncio.gather(
-            _timed_issues(), _timed_refs(), return_exceptions=True,
-        )
-        timer._steps.append(("쟁점구조화", t_issues))
-        timer._steps.append(("자료수집", t_refs))
+        if updated_issue is not None and self.state.topics:
+            async with timer.step("자료수집"):
+                await self._search_references(self.state.topics[-1], updated_issue)
 
         # 5) WebSocket broadcast — 연결된 모든 클라이언트에 실시간 push
         await self._emit("utterance", utterance)
@@ -323,21 +330,26 @@ class Pipeline:
         except Exception:
             logger.warning("토픽 DB 저장 실패", exc_info=True)
 
-    async def _update_issues(self, utterance: Utterance) -> None:
+    async def _update_issues(self, utterance: Utterance) -> IssueGraph | None:
+        """쟁점 구조 갱신. 실제로 갱신된 경우에만 IssueGraph 반환, 아니면 None."""
         if not self.state.topics:
-            return
+            return None
         try:
             current = self.state.topics[-1]
             issue = await self.issue_structurer.update(current, utterance)
+            if issue is None:
+                return None
             self.state.issues[current.id] = issue
             # DB 저장
-            if self.meeting_id and issue:
+            if self.meeting_id:
                 import db
                 await db.save_issue(
                     self.meeting_id, current.id, dataclasses.asdict(issue),
                 )
+            return issue
         except Exception:
             logger.warning("쟁점 구조화 실패", exc_info=True)
+            return None
 
     async def _check_triggers(self, utterance: Utterance) -> None:
         try:
@@ -355,28 +367,24 @@ class Pipeline:
         except Exception:
             logger.warning("트리거 감지 실패", exc_info=True)
 
-    async def _search_references(self, utterance: Utterance) -> None:
-        """발화에서 엔티티 추출 → 사내DB+웹 검색.
+    async def _search_references(self, topic: Topic, issue: IssueGraph) -> None:
+        """쟁점 구조(요약본) 기준으로 사내DB+웹 검색.
 
-        EntityExtractor가 언급할 만한 문서/데이터/인물/조직/수치가 없으면
-        빈 배열을 반환하므로, 의미 없는 짧은 발화엔 검색이 스킵된다.
+        쟁점 구조가 갱신될 때만 호출되므로 발화당 검색 대비 호출 횟수가 크게 줄어든다.
+        쿼리는 안건 제목 + 쟁점 토픽 + 첫 open_question 으로 구성.
         """
         try:
-            entities = await self.entity_extractor.extract(utterance)
-            for entity in entities:
-                refs = await self.reference_collector.search(entity)
-                if not refs:
-                    continue
-                self.state.references.extend(refs)
-                # 검색 완료 즉시 UI에 push — on_utterance 전체 완료를 기다리지 않음
-                await self._emit("references", self.state.references[-5:])
-                # DB 저장
-                if self.meeting_id:
-                    import db
-                    for ref in refs:
-                        await db.save_reference(
-                            self.meeting_id, ref.query, ref.source,
-                            ref.title, ref.snippet, ref.url, ref.relevance_score,
-                        )
+            refs = await self.reference_collector.search_for_issue(topic, issue)
+            if not refs:
+                return
+            self.state.references.extend(refs)
+            await self._emit("references", self.state.references[-5:])
+            if self.meeting_id:
+                import db
+                for ref in refs:
+                    await db.save_reference(
+                        self.meeting_id, ref.query, ref.source,
+                        ref.title, ref.snippet, ref.url, ref.relevance_score,
+                    )
         except Exception:
             logger.warning("자료 수집 실패", exc_info=True)

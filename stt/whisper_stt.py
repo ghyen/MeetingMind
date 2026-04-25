@@ -20,6 +20,16 @@ from stt.speaker import SpeakerIdentifier
 logger = logging.getLogger(__name__)
 
 _MLX_REPO = "mlx-community/whisper-large-v3-turbo"
+_SAMPLE_RATE = 16000
+
+_KNOWN_SHORT_HALLUCINATIONS = {
+    "감사합니다",
+    "네감사합니다",
+    "고맙습니다",
+    "고맙습니다감사합니다",
+    "다음영상에서만나요",
+    "시청해주셔서감사합니다",
+}
 
 
 def _format_time(seconds: float) -> str:
@@ -55,6 +65,20 @@ def _has_repetition_hallucination(text: str, threshold: int = 4) -> bool:
     return False
 
 
+def _normalize_hallucination_text(text: str) -> str:
+    return "".join(ch for ch in text.lower() if ch.isalnum())
+
+
+def _is_known_short_hallucination(text: str, audio_sec: float, max_sec: float) -> bool:
+    """짧은 실시간 조각에서 자주 나오는 Whisper 상투 문장 환각 감지."""
+    if audio_sec > max_sec:
+        return False
+    normalized = _normalize_hallucination_text(text)
+    if normalized in _KNOWN_SHORT_HALLUCINATIONS:
+        return True
+    return normalized.endswith("감사합니다") and len(normalized) <= 18
+
+
 class WhisperSTT:
     """mlx-whisper 통합 엔진 (실시간 + 파일)."""
 
@@ -73,6 +97,8 @@ class WhisperSTT:
         self._noise_floor: float = 0.0
         self._vad_threshold: float = 0.02
         self._vad_multiplier: float = 3.0
+        self._min_utterance_sec: float = 1.2
+        self._short_hallucination_sec: float = 2.2
 
     def load_model(self) -> None:
         import mlx_whisper
@@ -181,7 +207,12 @@ class WhisperSTT:
             self._buffer = []
             self._silence_ms = 0
 
-            if len(all_audio) < 16000 * 0.3:
+            audio_sec = len(all_audio) / _SAMPLE_RATE
+            if audio_sec < self._min_utterance_sec:
+                logger.info(
+                    "짧은 발화 폐기: 오디오 %.1f초 < %.1f초",
+                    audio_sec, self._min_utterance_sec,
+                )
                 return None
 
             return self._process_utterance(all_audio)
@@ -195,7 +226,12 @@ class WhisperSTT:
         all_audio = np.concatenate(self._buffer)
         self._buffer = []
         self._silence_ms = 0
-        if len(all_audio) < 16000 * 0.3:
+        audio_sec = len(all_audio) / _SAMPLE_RATE
+        if audio_sec < self._min_utterance_sec:
+            logger.info(
+                "짧은 발화 폐기: 오디오 %.1f초 < %.1f초",
+                audio_sec, self._min_utterance_sec,
+            )
             return None
         return self._process_utterance(all_audio)
 
@@ -203,7 +239,7 @@ class WhisperSTT:
         """축적된 오디오 → mlx-whisper STT + 화자 식별."""
         import mlx_whisper
 
-        audio_sec = len(audio) / 16000
+        audio_sec = len(audio) / _SAMPLE_RATE
         logger.info("Whisper 처리 시작: 오디오 %.1f초", audio_sec)
 
         t0 = time.time()
@@ -227,6 +263,13 @@ class WhisperSTT:
             logger.warning(
                 "Whisper 반복 할루시네이션 감지, 발화 폐기 (%.2f초): %s",
                 stt_elapsed, text[:60],
+            )
+            return None
+
+        if _is_known_short_hallucination(text, audio_sec, self._short_hallucination_sec):
+            logger.warning(
+                "Whisper 짧은 상투문구 환각 감지, 발화 폐기 (audio %.1f초, STT %.2f초): %s",
+                audio_sec, stt_elapsed, text[:60],
             )
             return None
 

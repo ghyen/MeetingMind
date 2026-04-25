@@ -15,11 +15,14 @@ class Settings(BaseSettings):
     diarization_enabled: bool = True
     max_speakers: int = 10
     speaker_embedding_model: str = "models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx"
-    speaker_similarity_threshold: float = 0.65
+    # Lower = more permissive matching to existing speakers, so fewer new speakers are created.
+    speaker_similarity_threshold: float = 0.35
 
     # 토픽 감지
     topic_silence_threshold_sec: float = 3.0
     topic_keywords: list[str] = ["다음 안건", "그건 그렇고", "자 이제", "넘어가서"]
+    # 키워드/침묵이 안 잡혀도 N 발화마다 LLM 판단 강제 (자연 대화 흐름 대응)
+    topic_force_check_utterances: int = 12
 
     # 쟁점 구조화
     issue_token_threshold: int = 500  # 누적 발화 토큰 수 기준 (tiktoken cl100k_base)

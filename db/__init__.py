@@ -207,6 +207,15 @@ async def update_topic_end_time(meeting_id: int, topic_seq: int, end_time: str) 
         await db.commit()
 
 
+async def update_topic_title(meeting_id: int, topic_seq: int, title: str) -> None:
+    async with aiosqlite.connect(settings.db_path) as db:
+        await db.execute(
+            "UPDATE topics SET title = ? WHERE meeting_id = ? AND topic_seq = ?",
+            (title, meeting_id, topic_seq),
+        )
+        await db.commit()
+
+
 async def get_topics(meeting_id: int) -> list[dict]:
     async with aiosqlite.connect(settings.db_path) as db:
         db.row_factory = aiosqlite.Row

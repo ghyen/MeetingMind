@@ -16,8 +16,17 @@ const MMI = {
   bell: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M5 8a5 5 0 0 1 10 0v3l1.5 3h-13L5 11z"/><path d="M8 16.5a2 2 0 0 0 4 0"/></svg>,
   doc: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M5 3h7l3 3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M7 9h6M7 12h6M7 15h4"/></svg>,
   settings: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="10" cy="10" r="2"/><path d="M10 2v2M10 16v2M4 10H2M18 10h-2M4.5 4.5L6 6M14 14l1.5 1.5M4.5 15.5L6 14M14 6l1.5-1.5"/></svg>,
-  sun: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" {...p}><circle cx="10" cy="10" r="3.5"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.5 4.5l1.4 1.4M14.1 14.1l1.4 1.4M4.5 15.5l1.4-1.4M14.1 5.9l1.4-1.4"/></svg>,
-  moon: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M17 13A7 7 0 0 1 7 3a7 7 0 1 0 10 10z"/></svg>,
+  sun: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <circle cx="12" cy="12" r="4"/>
+      <path d="M12 2.75v2.5M12 18.75v2.5M21.25 12h-2.5M5.25 12h-2.5M18.54 5.46l-1.77 1.77M7.23 16.77l-1.77 1.77M18.54 18.54l-1.77-1.77M7.23 7.23L5.46 5.46"/>
+    </svg>
+  ),
+  moon: (p) => (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...p}>
+      <path d="M21.75 15.02A9.72 9.72 0 0 1 18 15.75C12.62 15.75 8.25 11.38 8.25 6c0-1.3.26-2.56.73-3.75A9.75 9.75 0 1 0 21.75 15.02Z"/>
+    </svg>
+  ),
   sparkle: (p) => <svg viewBox="0 0 20 20" fill="currentColor" {...p}><path d="M10 1.5l1.8 4.7L16.5 8l-4.7 1.8L10 14.5 8.2 9.8 3.5 8l4.7-1.8zM16 13l.9 2.3 2.1.7-2.1.7L16 19l-.9-2.3-2.1-.7 2.1-.7z"/></svg>,
   panel: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M8 4v12"/></svg>,
   close: (p) => <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" {...p}><path d="M5 5l10 10M15 5L5 15"/></svg>,

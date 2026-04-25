@@ -21,6 +21,8 @@ class TopicDetector:
         self._last_silence_ms: float = 0.0
         self.segments: list[Topic] = []
         self._recent: list[Utterance] = []
+        # 마지막 LLM 토픽 판단 후 누적된 발화 수. 임계치 도달 시 키워드 없어도 LLM 강제 호출.
+        self._utterances_since_last_check: int = 0
 
     async def check(self, utterance: Utterance) -> Topic | None:
         """새 발화가 토픽 전환인지 판단. 전환이면 새 Topic 반환.
@@ -29,7 +31,7 @@ class TopicDetector:
           1차 필터: 키워드 1개+ 또는 긴 침묵(3초+) → 후보 선별 (빠름, 비용 0)
           2차 필터: 키워드 2개+ 동시 매칭 → LLM 없이 전환 확정 (빠름, 비용 0)
           3차 판단: 1차 통과 & 2차 미통과 → LLM이 최종 판단 (느림, LLM 호출 비용)
-        이 구조로 대부분의 발화는 1차에서 빠르게 걸러지고, LLM 호출은 최소화됨.
+        + 강제 검사: 위 셋 모두 안 걸렸어도 N발화마다 LLM 판단 1회 (자연 대화 흐름 대응)
         """
         self._recent.append(utterance)
         self._recent = self._recent[-10:]  # LLM 컨텍스트용 최근 발화 유지
@@ -43,16 +45,27 @@ class TopicDetector:
                 start_time=utterance.time,
             )
             self.segments.append(initial)
+            self._utterances_since_last_check = 0
             return initial
 
-        if not self._first_filter(utterance):
+        self._utterances_since_last_check += 1
+        first_pass = self._first_filter(utterance)
+        force_check = (
+            self._utterances_since_last_check
+            >= settings.topic_force_check_utterances
+        )
+
+        # 키워드/침묵 없고 강제 검사 임계치도 안 넘었으면 LLM 호출 없이 종료
+        if not first_pass and not force_check:
             return None
 
-        # 2차 필터 통과 시 LLM 호출 없이 즉시 토픽 전환 확정
-        new_topic = self._second_filter(utterance)
+        # 2차 필터 통과 시 LLM 호출 없이 즉시 토픽 전환 확정 (강제 검사 모드에선 키워드 없으므로 항상 None)
+        new_topic = self._second_filter(utterance) if first_pass else None
         if new_topic is None:
-            # 1차만 통과한 경우 → LLM에게 최종 판단 위임
+            # 1차/강제 검사 진입 → LLM에게 최종 판단 위임
             new_topic = await self._llm_judge(utterance)
+            self._utterances_since_last_check = 0  # LLM 호출했으니 카운터 리셋
+
         if new_topic:
             # 이전 토픽의 종료 시각 = 새 토픽의 시작 시각
             if self.segments:

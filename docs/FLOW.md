@@ -25,9 +25,9 @@
 │  1. DB 저장 (utterance)                                          │
 │  2. 토픽 전환 감지 (TopicDetector)                               │
 │  3. 트리거 감지 (TriggerDetector)                                │
-│  4. 쟁점 구조화 (IssueStructurer) ─┐                             │
-│  5. 자료 수집 (EntityExtractor     │ ← 4,5는 병렬 실행 가능      │
-│                + ReferenceCollector)┘                             │
+│  4. 쟁점 구조화 (IssueStructurer)                                │
+│  5. 자료 수집 (ReferenceCollector) ← 4가 갱신될 때만 호출         │
+│     쟁점 요약본(topic + open_question)을 쿼리로 1회 검색          │
 │  6. WebSocket broadcast                                          │
 └──────────────────────────┬──────────────────────────────────────┘
                            │
@@ -278,17 +278,12 @@ async def on_utterance(self, utterance: Utterance):
     # ④ 트리거 감지 (항상 먼저, 직렬)
     await self._check_triggers(utterance)
 
-    # ⑤ 쟁점 구조화 + 자료 수집
-    #    - Ollama: 순차 실행 (Ollama는 병렬 요청을 내부에서 직렬 처리하므로)
-    #    - OpenRouter: 병렬 실행 (asyncio.gather)
-    if _active_provider == "ollama":
-        await self._update_issues(utterance)     # 순차
-        await self._search_references(utterance)  # 순차
-    else:
-        await asyncio.gather(                     # 병렬
-            self._update_issues(utterance),
-            self._search_references(utterance),
-        )
+    # ⑤ 쟁점 구조화 → 갱신된 경우에만 자료 수집
+    #    issue_token_threshold(500토큰)마다 1회 갱신, 갱신 시에만 검색 트리거
+    #    → 발화당 검색 대비 웹 호출 빈도 대폭 감소
+    updated_issue = await self._update_issues(utterance)
+    if updated_issue is not None and self.state.topics:
+        await self._search_references(self.state.topics[-1], updated_issue)
 
     # ⑥ WebSocket broadcast
     await self._emit("utterance", utterance)
@@ -412,26 +407,28 @@ class IssueGraph:
 - stance는 더 긴 것으로 교체
 - arguments, evidence는 중복 제거 후 합산
 
-### 4-4. 자료 수집 (EntityExtractor + ReferenceCollector)
+### 4-4. 자료 수집 (ReferenceCollector)
 
 **파일**: `search/__init__.py`
 
+쟁점 구조가 실제 갱신될 때만 호출 — 발화당 LLM 엔티티 추출을 제거하고
+요약본(IssueGraph) 기준 1회 검색으로 단순화. 호출 빈도가 issue_token_threshold(500토큰)
+주기로 떨어져 웹 API 호출이 대폭 감소.
+
 ```
-발화 텍스트
+쟁점 갱신(IssueGraph + 안건 Topic)
   │
   ▼
-[EntityExtractor] LLM으로 엔티티 추출              ← search/__init__.py:45-68
-  "PG사 응답이 3초 넘어가는 케이스" →
-  Entity(text="PG사", type="org", search_query="PG사 결제 응답 지연 원인")
+[ReferenceCollector.search_for_issue()]            ← search/__init__.py
   │
-  ▼ (각 엔티티마다)
-[ReferenceCollector.search()]                       ← search/__init__.py:162-170
+  ├── 쿼리 합성: "{topic.title} {issue.topic} {open_questions[0]}"
+  │   동일 쿼리는 _query_cache(set)로 스킵
   │
-  ├── InternalSearch (ChromaDB 벡터 검색)           ← search/__init__.py:71-100
+  ├── InternalSearch (ChromaDB 벡터 검색)           ← search/__init__.py
   │     사내 문서 임베딩 DB에서 유사도 검색
   │     relevance_score = 1.0 - distance
   │
-  └── WebSearch (Tavily → DuckDuckGo 폴백)          ← search/__init__.py:103-152
+  └── WebSearch (Tavily → DuckDuckGo 폴백)          ← search/__init__.py
         외부 웹 검색
         Tavily API 키 없으면 DuckDuckGo 폴백
   │
@@ -439,6 +436,8 @@ class IssueGraph:
 결과 합산 → relevance_score 내림차순 정렬
 → Reference 리스트 반환
 ```
+
+> `EntityExtractor` 클래스는 `search/__init__.py`에 남아 있으나 파이프라인 기본 경로에서는 사용하지 않는다.
 
 ### 4-5. 회의록 요약 (generate_summary)
 
@@ -507,8 +506,7 @@ JSON 파싱 (마크다운 코드블록 제거)                     ← llm.py:91
 1. `TopicDetector._llm_judge()` — 토픽 전환 3차 판단 (`topic.py:80`)
 2. `IssueStructurer._create_initial()` — 초기 쟁점 구조 생성 (`issues.py:48`)
 3. `IssueStructurer._apply_delta()` — 쟁점 점진적 업데이트 (`issues.py:68`)
-4. `EntityExtractor.extract()` — 발화에서 엔티티 추출 (`search/__init__.py:45`)
-5. `generate_summary()` — 회의 종료 시 전체 회의록 요약 (`analysis/summary.py`)
+4. `generate_summary()` — 회의 종료 시 전체 회의록 요약 (`analysis/summary.py`)
 
 ---
 
@@ -633,7 +631,7 @@ def topic_detector(self):
     return self._topic_detector
 ```
 
-같은 패턴: `issue_structurer`, `trigger_detector`, `entity_extractor`, `reference_collector`, `stt_corrector`
+같은 패턴: `issue_structurer`, `trigger_detector`, `reference_collector`, `stt_corrector`
 
 ---
 
