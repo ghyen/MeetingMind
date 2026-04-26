@@ -30,13 +30,13 @@
 
 <!-- Foundations -->
 <script src="app/theme.js?v=2"></script>
-<script src="app/api.js?v=3"></script>
+<script src="app/api.js?v=4"></script>
 <!-- UI primitives -->
 <script type="text/babel" src="app/atoms.jsx?v=2"></script>
 <!-- Panels -->
 <script type="text/babel" src="app/Transcript.jsx?v=2"></script>
 <script type="text/babel" src="app/IssueCard.jsx?v=2"></script>
-<script type="text/babel" src="app/RightRail.jsx?v=2"></script>
+<script type="text/babel" src="app/RightRail.jsx?v=3"></script>
 <script type="text/babel" src="app/Chrome.jsx?v=3"></script>
 
 <!-- Mock data (fallback when backend is absent) -->
@@ -300,7 +300,10 @@ function App() {
     setTime(0);
     setRoute('live');
     if (hasBackend) {
-      window.MM.api.startMeeting({ title }).then(() => {
+      window.MM.api.startMeeting({ title }).then((r) => {
+        if (r?.meeting_id) {
+          setState((s) => ({ ...s, meeting: { ...(s.meeting || {}), id: r.meeting_id } }));
+        }
         window.MM.api.updateSpeakerNames(null, MOCK_SPEAKER_NAMES).catch(() => {});
       }).catch(() => {});
       // WS (real audio)
@@ -432,6 +435,33 @@ function App() {
     const trimmed = (title || '').trim() || '안건';
     setState((s) => ({ ...s, topics: s.topics.map((t) => (t.id === id ? { ...t, title: trimmed } : t)) }));
     if (hasBackend) window.MM.api.renameTopic(id, trimmed).catch(() => {});
+  }
+
+  function renameMeetingTitle(title) {
+    const trimmed = (title || '').trim() || '새 회의';
+    const meetingId = historyViewRef.current && state.meeting?.id && state.meeting.id !== 'demo'
+      ? state.meeting.id
+      : null;
+    setState((s) => ({
+      ...s,
+      meeting: { ...(s.meeting || {}), title: trimmed },
+      meetings_history: (s.meetings_history || []).map((m) => (
+        m.id === (meetingId || s.meeting?.id) ? { ...m, title: trimmed } : m
+      )),
+    }));
+    if (hasBackend) {
+      window.MM.api.renameMeeting(meetingId, trimmed).then((r) => {
+        if (r?.meeting_id) {
+          setState((s) => ({
+            ...s,
+            meeting: { ...(s.meeting || {}), id: s.meeting?.id || r.meeting_id, title: r.title || trimmed },
+            meetings_history: (s.meetings_history || []).map((m) => (
+              m.id === r.meeting_id ? { ...m, title: r.title || trimmed } : m
+            )),
+          }));
+        }
+      }).catch(() => {});
+    }
   }
 
   async function addTopic() {
@@ -568,7 +598,7 @@ function App() {
     <div style={{ ...css, display: 'flex', height: '100vh', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'var(--font)' }}>
       <Sidebar {...sidebarProps} onNew={openNewMeeting} onSelect={loadMeeting}/>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <TopBar title={state.meeting?.title} onTitleChange={(t) => setState((s) => ({ ...s, meeting: { ...s.meeting, title: t } }))}
+        <TopBar title={state.meeting?.title} onTitleChange={renameMeetingTitle}
           recording={recording} analyzing={analyzing} connected={connected}
           onOpenLogs={() => setLogsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
         <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>

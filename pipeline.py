@@ -96,6 +96,7 @@ class Pipeline:
         self._stt_corrector = None
         # 직전 발화의 스트림 경과초 — 발화 간격으로 침묵 길이 추정
         self._last_utterance_seconds: float | None = None
+        self._manual_meeting_title: bool = False
 
     def add_listener(self, callback) -> None:
         """상태 변경 시 호출할 콜백 등록."""
@@ -171,6 +172,7 @@ class Pipeline:
         self.issue_structurer._pending = {}
         self._stt_corrector = None
         self._last_utterance_seconds = None
+        self._manual_meeting_title = False
 
         self.meeting_id = await db.create_meeting(title=title, audio_path=audio_path)
         # 회의 컨텍스트 설정 → STT 교정에 활용
@@ -180,6 +182,15 @@ class Pipeline:
         logger.info("회의 시작: meeting_id=%d", self.meeting_id)
         return self.meeting_id
 
+    async def update_meeting_title(self, title: str) -> None:
+        """사용자가 지정한 회의 제목 저장."""
+        if not self.meeting_id:
+            return
+        import db
+        await db.update_meeting_title(self.meeting_id, title)
+        self._manual_meeting_title = True
+        logger.info("회의 제목 수동 변경: '%s'", title)
+
     async def end_meeting(self) -> dict | None:
         """회의 종료 → 제목 생성 + 회의록 요약 생성 → DB에 저장."""
         summary = None
@@ -187,11 +198,12 @@ class Pipeline:
             import db
             from analysis.summary import generate_summary
 
-            # 회의 제목 자동 생성 (발화 내용 기반)
-            title = await self._generate_title()
-            if title:
-                await db.update_meeting_title(self.meeting_id, title)
-                logger.info("회의 제목 생성: '%s'", title)
+            # 회의 제목 자동 생성 (발화 내용 기반). 사용자가 직접 바꾼 제목은 보존.
+            if not self._manual_meeting_title:
+                title = await self._generate_title()
+                if title:
+                    await db.update_meeting_title(self.meeting_id, title)
+                    logger.info("회의 제목 생성: '%s'", title)
 
             summary = await generate_summary(self.state)
             if summary:

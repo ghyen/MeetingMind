@@ -17,6 +17,10 @@
     endMeeting() { return this._req('/api/meeting/end', { method: 'POST' }); },
     state() { return this._req('/api/meeting/state'); },
     simulate(body) { return this._req('/api/meeting/simulate', { method: 'POST', body: JSON.stringify(body) }); },
+    renameMeeting(meetingId, title) {
+      const path = meetingId ? `/api/meetings/${meetingId}/title` : '/api/meeting/title';
+      return this._req(path, { method: 'PUT', body: JSON.stringify({ title }) });
+    },
     updateIssue(topicId, body) { return this._req(`/api/meeting/issues/${topicId}`, { method: 'PUT', body: JSON.stringify(body) }); },
     renameTopic(topicId, title) { return this._req(`/api/meeting/topics/${topicId}`, { method: 'PUT', body: JSON.stringify({ title }) }); },
     addTopic(title) { return this._req('/api/meeting/topics', { method: 'POST', body: JSON.stringify({ title: title || '새 안건' }) }); },

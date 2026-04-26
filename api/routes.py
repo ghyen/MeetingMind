@@ -48,6 +48,10 @@ class StartMeetingRequest(BaseModel):
     description: str = ""
 
 
+class MeetingTitleRequest(BaseModel):
+    title: str
+
+
 # ── 회의 라이프사이클 ────────────────────────────────────
 
 
@@ -76,6 +80,17 @@ async def end_meeting():
     meeting = await db.get_meeting(meeting_id)
     title = meeting.get("title") if meeting else None
     return {"meeting_id": meeting_id, "title": title, "status": "ended", "summary": summary}
+
+
+@router.put("/meeting/title")
+async def update_current_meeting_title(body: MeetingTitleRequest):
+    """현재 진행 중인 회의 제목 수정."""
+    pipe = _get_pipeline()
+    if not pipe.meeting_id:
+        return {"error": "진행 중인 회의가 없습니다"}
+    title = (body.title or "").strip() or "새 회의"
+    await pipe.update_meeting_title(title)
+    return {"ok": True, "meeting_id": pipe.meeting_id, "title": title}
 
 
 # ── 실시간 상태 조회 (인메모리) ────────────────────────────
@@ -474,6 +489,21 @@ async def get_meeting_detail(meeting_id: int):
     if not data:
         return {"error": "회의를 찾을 수 없습니다"}
     return data
+
+
+@router.put("/meetings/{meeting_id}/title")
+async def update_meeting_title(meeting_id: int, body: MeetingTitleRequest):
+    """저장된 회의 제목 수정."""
+    title = (body.title or "").strip() or "새 회의"
+    meeting = await db.get_meeting(meeting_id)
+    if not meeting:
+        return {"error": "회의를 찾을 수 없습니다"}
+    pipe = _get_pipeline()
+    if pipe.meeting_id == meeting_id:
+        await pipe.update_meeting_title(title)
+    else:
+        await db.update_meeting_title(meeting_id, title)
+    return {"ok": True, "meeting_id": meeting_id, "title": title}
 
 
 class SpeakerNamesUpdate(BaseModel):

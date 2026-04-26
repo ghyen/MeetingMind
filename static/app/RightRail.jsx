@@ -24,9 +24,15 @@ function RightRail({ interventions, references, onProposeNext, onDismissInterven
         </div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 }}>
-        {tab === 'alerts' && <AlertsTab interventions={interventions} onProposeNext={onProposeNext} onDismiss={onDismissIntervention}/>}
-        {tab === 'refs' && <RefsTab references={references}/>}
-        {tab === 'chat' && <ChatTab onAsk={onAskAi}/>}
+        <div style={{ display: tab === 'alerts' ? 'block' : 'none' }}>
+          <AlertsTab interventions={interventions} onProposeNext={onProposeNext} onDismiss={onDismissIntervention}/>
+        </div>
+        <div style={{ display: tab === 'refs' ? 'block' : 'none' }}>
+          <RefsTab references={references}/>
+        </div>
+        <div style={{ display: tab === 'chat' ? 'block' : 'none', height: '100%' }}>
+          <ChatTab onAsk={onAskAi}/>
+        </div>
       </div>
     </div>
   );
