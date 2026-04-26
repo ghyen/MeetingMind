@@ -186,6 +186,15 @@ async def get_utterances(meeting_id: int) -> list[dict]:
         return [dict(r) for r in await cur.fetchall()]
 
 
+async def update_utterance_text(meeting_id: int, time: str, speaker: str, text: str) -> None:
+    async with aiosqlite.connect(settings.db_path) as db:
+        await db.execute(
+            "UPDATE utterances SET text = ? WHERE meeting_id = ? AND time = ? AND speaker = ?",
+            (text, meeting_id, time, speaker),
+        )
+        await db.commit()
+
+
 # ── 토픽 ──────────────────────────────────────────────
 
 async def save_topic(meeting_id: int, topic_seq: int, title: str, start_time: str) -> int:

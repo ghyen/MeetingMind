@@ -305,6 +305,14 @@ class Pipeline:
             if corrected:
                 self.state.latest_corrections = corrected
                 await self._emit("correction", corrected)
+                # 메모리 발화 텍스트 교정
+                # state.utterances, topics[*].utterances, issue_structurer._pending 이
+                # 모두 동일 Utterance 객체를 참조하므로 여기서만 수정하면 전부 반영됨
+                correction_map = {(u.time, u.speaker): u.text for u in corrected}
+                for u in self.state.utterances:
+                    new_text = correction_map.get((u.time, u.speaker))
+                    if new_text is not None:
+                        u.text = new_text
                 # DB에 교정된 텍스트 업데이트
                 if self.meeting_id:
                     import db
