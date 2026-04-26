@@ -251,7 +251,7 @@ class Pipeline:
         async with timer.step("STT교정"):
             await self._correct_stt(utterance)
 
-        # 2) 토픽 전환 감지 — 3단계 필터(키워드→키워드2개+→LLM) + N발화마다 강제 LLM 판정
+        # 2) 토픽 전환 감지 — 3단계 필터(키워드→키워드2개+→LLM), 선택적으로 N발화마다 강제 LLM 판정
         # 직전 발화와의 시간 간격을 침묵 길이 추정치로 TopicDetector에 주입
         new_topic = None
         async with timer.step("토픽감지"):

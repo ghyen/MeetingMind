@@ -19,10 +19,10 @@ class Settings(BaseSettings):
     speaker_similarity_threshold: float = 0.35
 
     # 토픽 감지
-    topic_silence_threshold_sec: float = 3.0
+    topic_silence_threshold_sec: float = 8.0
     topic_keywords: list[str] = ["다음 안건", "그건 그렇고", "자 이제", "넘어가서"]
-    # 키워드/침묵이 안 잡혀도 N 발화마다 LLM 판단 강제 (자연 대화 흐름 대응)
-    topic_force_check_utterances: int = 12
+    # 0이면 키워드/긴 침묵 없이 LLM 토픽 판단을 강제하지 않음.
+    topic_force_check_utterances: int = 0
 
     # 쟁점 구조화
     issue_token_threshold: int = 500  # 누적 발화 토큰 수 기준 (tiktoken cl100k_base)

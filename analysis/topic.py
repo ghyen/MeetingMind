@@ -1,7 +1,7 @@
 """토픽 전환 감지 & 안건 세그멘테이션.
 
 3단계 감지:
-  1차 필터: 키워드 1개+ 매칭 또는 긴 침묵(3초+) → 후보 선별
+  1차 필터: 키워드 1개+ 매칭 또는 긴 침묵 → 후보 선별
   2차 필터: 키워드 2개+ 동시 매칭 → LLM 없이 전환 확정
   3차 판단: 1차 통과 & 2차 미통과 → LLM이 최종 판단
 """
@@ -51,7 +51,8 @@ class TopicDetector:
         self._utterances_since_last_check += 1
         first_pass = self._first_filter(utterance)
         force_check = (
-            self._utterances_since_last_check
+            settings.topic_force_check_utterances > 0
+            and self._utterances_since_last_check
             >= settings.topic_force_check_utterances
         )
 
@@ -73,19 +74,16 @@ class TopicDetector:
             self.segments.append(new_topic)
         return new_topic
 
-    # 2차 필터 키워드 — 2개+ 동시 매칭 시 전환 확정
-    _SECOND_FILTER_KEYWORDS = ["마무리", "정리", "넘어가서", "다음 안건", "다음으로"]
+    # 2차 필터 키워드 — 2개+ 동시 매칭 시 전환 확정.
+    # "마무리/정리"는 현재 안건의 결론일 가능성이 높아 자동 전환에서 제외.
+    _SECOND_FILTER_KEYWORDS = ["넘어가서", "다음 안건", "다음으로", "다른 주제"]
 
     def _second_filter(self, utterance: Utterance) -> Topic | None:
         """2차 필터: 키워드 2개+ 동시 매칭 → LLM 없이 전환 확정."""
         matched = [kw for kw in self._SECOND_FILTER_KEYWORDS if kw in utterance.text]
         if len(matched) >= 2:
             self._topic_counter += 1
-            # 매칭된 키워드에서 토픽명 유추
-            if any(kw in matched for kw in ("마무리", "정리")):
-                title = "마무리 및 정리"
-            else:
-                title = "다음 안건"
+            title = "다음 안건"
             return Topic(id=self._topic_counter, title=title, start_time=utterance.time)
         return None
 
@@ -107,8 +105,9 @@ class TopicDetector:
             "다음은 회의 중 최근 발화입니다:\n\n"
             f"{context}\n\n"
             "마지막 발화 기준으로 새로운 토픽/안건이 시작되었는지 판단하세요.\n"
-            "중요: '마무리', '정리', '넘어가서', '다음으로' 등 wrap-up/전환 표현이 있으면 "
-            "현재 토픽의 연장이 아니라 새로운 토픽(마무리/정리 안건)으로 분류하세요.\n"
+            "매우 보수적으로 판단하세요. 명시적으로 '다음 안건', '다른 주제로', '넘어가서'처럼 "
+            "새 주제를 시작한다는 표현이 있거나, 긴 침묵 뒤 완전히 다른 업무/결정 주제로 이동한 경우에만 changed=true입니다.\n"
+            "중요: 지금 논의의 결론 정리, 마무리, 액션 아이템 확인, 같은 안건의 세부 질문은 새 안건이 아닙니다.\n"
             'JSON: {"changed": true/false, "title": "토픽명 (10자 이내)"}'
         )
         data = await ask_json(prompt)

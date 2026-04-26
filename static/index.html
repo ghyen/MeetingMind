@@ -170,6 +170,7 @@ function App() {
   const audioRef = useRef(null);
   const wsRef = useRef(null);
   const historyViewRef = useRef(false);
+  const liveSnapshotRef = useRef(null);
   const lastTopicCountRef = useRef(0);
 
   // ── CSS vars mount ───────────────────────────────────
@@ -213,12 +214,10 @@ function App() {
       try {
         const res = await window.MM.api.listMeetings();
         if (!cancelled && res.meetings) {
-          setState((prev) => ({ ...prev, meetings_history: res.meetings.map((m) => ({
-            id: m.id,
-            title: m.title || '(제목 없음)',
-            date: m.started_at ? m.started_at.slice(0, 16).replace('T', ' ') : '',
-            duration: m.ended_at ? '' : '',
-          })) }));
+          setState((prev) => ({
+            ...prev,
+            meetings_history: withLiveMeeting(res.meetings.map(historyItemFromDb), prev.meeting),
+          }));
         }
       } catch {}
     })();
@@ -260,10 +259,117 @@ function App() {
   // ── Actions ─────────────────────────────────────────
   const MOCK_SPEAKER_NAMES = { 'Speaker 1': '김지연', 'Speaker 2': '박민호', 'Speaker 3': '이서준', 'Speaker 4': '최하늘' };
 
+  function historyItemFromDb(m) {
+    return {
+      id: m.id,
+      title: m.title || '(제목 없음)',
+      date: m.started_at ? m.started_at.slice(0, 16).replace('T', ' ') : '',
+      duration: m.ended_at ? '' : '',
+      active: !m.ended_at,
+    };
+  }
+
+  function historyItemFromMeeting(meeting, patch = {}) {
+    return {
+      id: meeting?.id,
+      title: meeting?.title || '새 회의',
+      date: meeting?.created_at || '방금',
+      active: !!meeting?.active,
+      ...patch,
+    };
+  }
+
+  function upsertHistoryItem(history, item) {
+    if (!item?.id) return history || [];
+    const itemId = String(item.id);
+    const withoutItem = (history || []).filter((m) => String(m.id) !== itemId);
+    return [
+      item,
+      ...withoutItem.map((m) => (item.active ? { ...m, active: false } : m)),
+    ];
+  }
+
+  function replaceHistoryId(history, tempId, realId, patch = {}) {
+    if (!tempId || !realId) return history || [];
+    const seen = new Set();
+    return (history || []).reduce((items, m) => {
+      const item = String(m.id) === String(tempId)
+        ? { ...m, ...patch, id: realId, pending: false }
+        : m;
+      const itemId = String(item.id);
+      if (seen.has(itemId)) return items;
+      seen.add(itemId);
+      items.push(item);
+      return items;
+    }, []);
+  }
+
+  function withLiveMeeting(history, meeting) {
+    if (!meeting?.id || !meeting.active) return history || [];
+    return upsertHistoryItem(history || [], historyItemFromMeeting(meeting, { active: true }));
+  }
+
+  function captureLiveSnapshot(baseState = state) {
+    if (!recording || historyViewRef.current || !baseState.meeting?.id) return;
+    liveSnapshotRef.current = {
+      state: baseState,
+      activeTopicId,
+      notesByTopic,
+      bookmarks,
+      partialText,
+      partialSpeaker,
+      analyzing,
+      calibration,
+      summary,
+      summaryLoading,
+    };
+  }
+
+  function updateLiveState(updater) {
+    if (historyViewRef.current && liveSnapshotRef.current) {
+      liveSnapshotRef.current = {
+        ...liveSnapshotRef.current,
+        state: updater(liveSnapshotRef.current.state),
+      };
+      return;
+    }
+    setState(updater);
+  }
+
+  function updateLiveMeta(patch) {
+    if (!historyViewRef.current || !liveSnapshotRef.current) return false;
+    liveSnapshotRef.current = { ...liveSnapshotRef.current, ...patch };
+    return true;
+  }
+
+  function restoreLiveSnapshot() {
+    const snap = liveSnapshotRef.current;
+    historyViewRef.current = false;
+    if (!snap) {
+      setRoute('live');
+      return;
+    }
+    setState((prev) => ({
+      ...snap.state,
+      meetings_history: withLiveMeeting(prev.meetings_history || snap.state.meetings_history || [], snap.state.meeting),
+    }));
+    setActiveTopicId(snap.activeTopicId);
+    setNotesByTopic(snap.notesByTopic || {});
+    setBookmarks(snap.bookmarks || []);
+    setPartialText(snap.partialText || '');
+    setPartialSpeaker(snap.partialSpeaker || '');
+    setAnalyzing(!!snap.analyzing);
+    setCalibration(snap.calibration || { state: 'idle', threshold: null });
+    setSummary(snap.summary || null);
+    setSummaryLoading(!!snap.summaryLoading);
+    setRoute('live');
+  }
+
   function openNewMeeting() {
     if (audioRef.current) audioRef.current.stop();
     if (wsRef.current) wsRef.current.close();
     historyViewRef.current = false;
+    liveSnapshotRef.current = null;
     setRecording(false);
     setPaused(false);
     setMuted(false);
@@ -284,17 +390,28 @@ function App() {
   }
 
   function startMeeting({ title, calibrationThreshold = null } = {}) {
+    const tempMeetingId = `live-${Date.now()}`;
+    const displayTitle = title || '새 회의';
+    const createdAt = new Date().toLocaleString('ko-KR');
     const initialCalibrationThreshold = Number.isFinite(calibrationThreshold) ? calibrationThreshold : null;
     setCalibration(initialCalibrationThreshold != null
       ? { state: hasBackend ? 'pending' : 'done', threshold: initialCalibrationThreshold }
       : { state: 'idle', threshold: null });
+    liveSnapshotRef.current = null;
+    historyViewRef.current = false;
     setState((s) => ({
       ...s,
-      meeting: { id: null, title: title || '새 회의', created_at: new Date().toLocaleString('ko-KR'), active: true },
+      meeting: { id: tempMeetingId, title: displayTitle, created_at: createdAt, active: true },
+      meetings_history: upsertHistoryItem(s.meetings_history || [], {
+        id: tempMeetingId,
+        title: displayTitle,
+        date: createdAt,
+        active: true,
+        pending: true,
+      }),
       speaker_names: { ...MOCK_SPEAKER_NAMES },
       utterances: [], topics: [], issues: {}, interventions: [], references: [],
     }));
-    historyViewRef.current = false;
     lastTopicCountRef.current = 0;
     setRecording(true); setPaused(false);
     setTime(0);
@@ -302,7 +419,28 @@ function App() {
     if (hasBackend) {
       window.MM.api.startMeeting({ title }).then((r) => {
         if (r?.meeting_id) {
-          setState((s) => ({ ...s, meeting: { ...(s.meeting || {}), id: r.meeting_id } }));
+          setState((s) => {
+            const nextHistory = replaceHistoryId(s.meetings_history || [], tempMeetingId, r.meeting_id, {
+              title: displayTitle,
+              active: true,
+            }).map((m) => (String(m.id) === String(r.meeting_id) ? m : { ...m, active: false }));
+            if (historyViewRef.current && liveSnapshotRef.current) {
+              liveSnapshotRef.current = {
+                ...liveSnapshotRef.current,
+                state: {
+                  ...liveSnapshotRef.current.state,
+                  meeting: { ...(liveSnapshotRef.current.state.meeting || {}), id: r.meeting_id },
+                  meetings_history: nextHistory,
+                },
+              };
+              return { ...s, meetings_history: nextHistory };
+            }
+            return {
+              ...s,
+              meeting: { ...(s.meeting || {}), id: r.meeting_id },
+              meetings_history: nextHistory,
+            };
+          });
         }
         window.MM.api.updateSpeakerNames(null, MOCK_SPEAKER_NAMES).catch(() => {});
       }).catch(() => {});
@@ -322,10 +460,13 @@ function App() {
       ws.onClose(() => setConnected(false));
       ws.onMessage((m) => {
         if (m.type === 'transcript') {
-          if (m.utterance) setState((s) => ({ ...s, utterances: [...s.utterances, m.utterance] }));
-          setPartialText(''); setAnalyzing(true);
+          if (m.utterance) updateLiveState((s) => ({ ...s, utterances: [...(s.utterances || []), m.utterance] }));
+          if (!updateLiveMeta({ partialText: '', analyzing: true })) {
+            setPartialText('');
+            setAnalyzing(true);
+          }
         } else if (m.type === 'analysis') {
-          setState((s) => ({
+          updateLiveState((s) => ({
             ...s,
             topics: m.topics || s.topics,
             issues: m.issues || s.issues,
@@ -334,13 +475,16 @@ function App() {
             issue_tokens: m.issue_tokens || s.issue_tokens || {},
             issue_token_threshold: m.issue_token_threshold || s.issue_token_threshold || 500,
           }));
-          setAnalyzing(false);
+          if (!updateLiveMeta({ analyzing: false })) setAnalyzing(false);
         } else if (m.type === 'status') {
-          setAnalyzing(m.state === 'analyzing');
+          const isAnalyzing = m.state === 'analyzing';
+          if (!updateLiveMeta({ analyzing: isAnalyzing })) setAnalyzing(isAnalyzing);
         } else if (m.type === 'calibrating') {
-          setCalibration({ state: 'calibrating', threshold: null });
+          const next = { state: 'calibrating', threshold: null };
+          if (!updateLiveMeta({ calibration: next })) setCalibration(next);
         } else if (m.type === 'calibrated') {
-          setCalibration({ state: 'done', threshold: Number.isFinite(m.threshold) ? m.threshold : null });
+          const next = { state: 'done', threshold: Number.isFinite(m.threshold) ? m.threshold : null };
+          if (!updateLiveMeta({ calibration: next })) setCalibration(next);
         } else if (m.type === 'ready') {
           applyInitialCalibration();
         }
@@ -355,6 +499,8 @@ function App() {
   function endMeeting() {
     if (audioRef.current) audioRef.current.stop();
     if (wsRef.current) wsRef.current.close();
+    liveSnapshotRef.current = null;
+    historyViewRef.current = false;
     setRecording(false); setPaused(false);
     setSummary(null);
     setRoute('summary');
@@ -364,10 +510,7 @@ function App() {
         setSummary(r.summary || null);
         setSummaryLoading(false);
         window.MM.api.listMeetings().then((res) => {
-          if (res.meetings) setState((prev) => ({ ...prev, meetings_history: res.meetings.map((m) => ({
-            id: m.id, title: m.title || '(제목 없음)',
-            date: m.started_at ? m.started_at.slice(0, 16).replace('T', ' ') : '',
-          })) }));
+          if (res.meetings) setState((prev) => ({ ...prev, meetings_history: res.meetings.map(historyItemFromDb) }));
         }).catch(() => {});
       }).catch(() => { setSummaryLoading(false); });
     } else {
@@ -386,6 +529,8 @@ function App() {
   function resetAll() {
     if (audioRef.current) audioRef.current.stop();
     if (wsRef.current) wsRef.current.close();
+    liveSnapshotRef.current = null;
+    historyViewRef.current = false;
     setRecording(false); setPaused(false); setMuted(false);
     setCalibration({ state: 'idle', threshold: null });
     if (hasBackend) window.MM.api.reset().catch(() => {});
@@ -519,14 +664,26 @@ function App() {
   }
 
   async function loadMeeting(id) {
+    const visibleLiveId = recording && !historyViewRef.current ? state.meeting?.id : null;
+    const snapLiveId = liveSnapshotRef.current?.state?.meeting?.id;
+    if (recording && (String(id) === String(visibleLiveId) || String(id) === String(snapLiveId))) {
+      restoreLiveSnapshot();
+      return;
+    }
     if (!hasBackend || !id) return;
     try {
+      if (recording && !historyViewRef.current) captureLiveSnapshot();
       const data = await window.MM.api.getMeeting(id);
       if (data.error) return;
-      if (audioRef.current) audioRef.current.stop();
-      if (wsRef.current) wsRef.current.close();
+      if (!recording) {
+        if (audioRef.current) audioRef.current.stop();
+        if (wsRef.current) wsRef.current.close();
+      }
       historyViewRef.current = true;
-      setRecording(false); setPaused(false);
+      if (!recording) {
+        setRecording(false);
+        setPaused(false);
+      }
       setCalibration({ state: 'idle', threshold: null });
       const m = data.meeting || {};
       setState((prev) => ({
@@ -553,6 +710,7 @@ function App() {
   const { TopBar, Sidebar, AgendaTabs, RecordBar, StartScreen, LogsModal, SummaryScreen,
           TranscriptPanel, IssueCard, RightRail } = window.MM;
   const logsProps = { open: logsOpen, onClose: () => setLogsOpen(false), logs, onClear: () => setLogs([]) };
+  const viewingHistory = historyViewRef.current;
   const sidebarProps = { meetings: state.meetings_history || [], activeId: state.meeting?.id, open: sidebarOpen, onToggleOpen: toggleSidebar };
 
   // ── START SCREEN ─────────────────────────────────
@@ -599,10 +757,10 @@ function App() {
       <Sidebar {...sidebarProps} onNew={openNewMeeting} onSelect={loadMeeting}/>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TopBar title={state.meeting?.title} onTitleChange={renameMeetingTitle}
-          recording={recording} analyzing={analyzing} connected={connected}
+          recording={recording && !viewingHistory} analyzing={!viewingHistory && analyzing} connected={connected}
           onOpenLogs={() => setLogsOpen(true)} isDark={isDark} onToggleTheme={toggleTheme}/>
         <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
-          <TranscriptPanel utterances={state.utterances} live={recording && !paused}
+          <TranscriptPanel utterances={state.utterances} live={recording && !paused && !viewingHistory}
             speakerNames={speakerNames} onRenameSpeaker={renameSpeaker}
             analyzing={analyzing} partialText={partialText} partialSpeaker={partialSpeaker}
             bookmarks={bookmarks} onBookmark={toggleBookmark}/>
@@ -641,7 +799,7 @@ function App() {
             onDismissIntervention={dismissIntervention} onAskAi={askAi}/>
 
           {/* Floating record bar */}
-          {recording && (
+          {recording && !viewingHistory && (
             <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 20 }}>
               <RecordBar recording={recording} paused={paused} onPause={() => setPaused((p) => !p)}
                 timer={timer} level={level} muted={muted} onToggleMute={() => setMuted((m) => !m)}
