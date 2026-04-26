@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     topic_min_utterances: int = 6
 
     # 쟁점 구조화
-    issue_token_threshold: int = 500  # 누적 발화 토큰 수 기준 (tiktoken cl100k_base)
+    issue_token_threshold: int = 200  # 누적 발화 토큰 수 기준 (tiktoken cl100k_base)
 
     # 개입 트리거
     loop_detection_count: int = 10
