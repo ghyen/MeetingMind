@@ -67,6 +67,7 @@
       this._stopped = false;
     }
     connect() {
+      this._stopped = false;
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       this.ws = new WebSocket(`${proto}//${location.host}${this.path}`);
       this.ws.binaryType = 'arraybuffer';
@@ -77,8 +78,14 @@
         }
       };
       this.ws.onclose = () => {
-        this.closeHandlers.forEach((h) => h());
-        if (this.reconnect && !this._stopped) setTimeout(() => this.connect(), this.retryMs);
+        if (!this._stopped) {
+          this.closeHandlers.forEach((h) => h());
+          if (this.reconnect) {
+            setTimeout(() => {
+              if (!this._stopped) this.connect();
+            }, this.retryMs);
+          }
+        }
       };
       this.ws.onerror = () => {};
     }
@@ -130,7 +137,13 @@
       this.node = this.ctx = this.stream = null;
       this.level = 0;
     }
-    setMuted(m) { this.muted = m; if (m) this.level = 0; }
+    setMuted(m) {
+      this.muted = !!m;
+      if (this.stream) {
+        this.stream.getAudioTracks().forEach((track) => { track.enabled = !this.muted; });
+      }
+      if (this.muted) this.level = 0;
+    }
     calibrate() { return this.ws.send('calibrate'); }
     applyCalibrationThreshold(threshold) {
       if (!Number.isFinite(threshold)) return false;

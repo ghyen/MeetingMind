@@ -71,6 +71,7 @@ async def audio_stream(websocket: WebSocket):
     pipe = _get_pipeline()
     await manager.connect(websocket)
     ws_open = True
+    paused = False
 
     async def safe_send(data):
         if ws_open and websocket in manager.active_connections:
@@ -126,12 +127,32 @@ async def audio_stream(websocket: WebSocket):
             logger.warning("파이프라인 분석 실패: %s", e)
             await safe_send({"type": "status", "state": "done"})
 
+    async def _handle_utterance(utterance):
+        logger.info("STT: [%s] %s: %s", utterance.time, utterance.speaker, utterance.text)
+        await safe_send({
+            "type": "transcript",
+            "utterance": _serialize(utterance),
+        })
+        await safe_send({"type": "status", "state": "analyzing", "chunks": whisper._chunk_count})
+        asyncio.create_task(_bg_analysis(utterance))
+
     try:
         while True:
             msg = await websocket.receive()
             # 텍스트 명령 처리
             if msg.get("text"):
                 cmd = msg["text"].strip()
+                if cmd == "pause":
+                    paused = True
+                    utterance = whisper.flush()
+                    if utterance:
+                        await _handle_utterance(utterance)
+                    await safe_send({"type": "status", "state": "paused"})
+                    continue
+                if cmd == "resume":
+                    paused = False
+                    await safe_send({"type": "status", "state": "ready"})
+                    continue
                 if cmd.startswith("calibrate:"):
                     # 클라이언트에서 측정한 threshold 적용
                     try:
@@ -147,6 +168,8 @@ async def audio_stream(websocket: WebSocket):
                 continue
             audio_chunk = msg.get("bytes")
             if not audio_chunk:
+                continue
+            if paused:
                 continue
             try:
                 was_calibrating = whisper._calibrating
@@ -166,14 +189,7 @@ async def audio_stream(websocket: WebSocket):
                     })
 
                 if utterance:
-                    logger.info("STT: [%s] %s: %s", utterance.time, utterance.speaker, utterance.text)
-                    await safe_send({
-                        "type": "transcript",
-                        "utterance": _serialize(utterance),
-                    })
-                    # 분석 시작 알림 → 클라이언트에서 "Analyzing..." 표시
-                    await safe_send({"type": "status", "state": "analyzing", "chunks": whisper._chunk_count})
-                    asyncio.create_task(_bg_analysis(utterance))
+                    await _handle_utterance(utterance)
             except Exception as e:
                 logger.error("오디오 처리 오류: %s", e)
     except WebSocketDisconnect:

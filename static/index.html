@@ -30,7 +30,7 @@
 
 <!-- Foundations -->
 <script src="app/theme.js?v=2"></script>
-<script src="app/api.js?v=4"></script>
+<script src="app/api.js?v=5"></script>
 <!-- UI primitives -->
 <script type="text/babel" src="app/atoms.jsx?v=2"></script>
 <!-- Panels -->
@@ -185,6 +185,7 @@ function App() {
       try {
         const s = await window.MM.api.state();
         if (cancelled) return;
+        setConnected(true);
         setState((prev) => ({
           ...prev,
           utterances: s.utterances || [],
@@ -254,6 +255,12 @@ function App() {
       setLevel(v != null ? v : 0.25 + Math.random() * 0.5);
     }, 120);
     return () => clearInterval(id);
+  }, [recording, paused, muted]);
+
+  useEffect(() => {
+    const silent = paused || muted || !recording;
+    audioRef.current?.setMuted?.(silent);
+    if (recording) wsRef.current?.send?.(silent ? 'pause' : 'resume');
   }, [recording, paused, muted]);
 
   // ── Actions ─────────────────────────────────────────
@@ -413,7 +420,7 @@ function App() {
       utterances: [], topics: [], issues: {}, interventions: [], references: [],
     }));
     lastTopicCountRef.current = 0;
-    setRecording(true); setPaused(false);
+    setRecording(true); setPaused(false); setMuted(false);
     setTime(0);
     setRoute('live');
     if (hasBackend) {

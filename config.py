@@ -20,9 +20,12 @@ class Settings(BaseSettings):
 
     # 토픽 감지
     topic_silence_threshold_sec: float = 8.0
-    topic_keywords: list[str] = ["다음 안건", "그건 그렇고", "자 이제", "넘어가서"]
+    topic_keywords: list[str] = ["다음 안건", "다음 한건", "다음 한권", "그건 그렇고", "자 이제", "넘어가서"]
     # 0이면 키워드/긴 침묵 없이 LLM 토픽 판단을 강제하지 않음.
     topic_force_check_utterances: int = 0
+    # 너무 짧은 구간에서 비슷한 안건이 연속 생성되는 것을 방지.
+    topic_min_duration_sec: float = 45.0
+    topic_min_utterances: int = 6
 
     # 쟁점 구조화
     issue_token_threshold: int = 500  # 누적 발화 토큰 수 기준 (tiktoken cl100k_base)
