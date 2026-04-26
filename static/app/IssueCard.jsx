@@ -267,10 +267,11 @@ function PositionRow({ p, editMode, onDelete }) {
 
 function IssueTokenBar({ pendingTokens, tokenThreshold }) {
   const pending = pendingTokens || 0;
-  const threshold = tokenThreshold || 500;
+  const threshold = tokenThreshold || 200;
   const pct = Math.min(100, Math.round(pending / threshold * 100));
   const wasHighRef = React.useRef(false);
   const [analyzing, setAnalyzing] = icU(false);
+  const timerRef = React.useRef(null);
 
   React.useEffect(() => {
     if (pending >= threshold * 0.5) {
@@ -278,10 +279,15 @@ function IssueTokenBar({ pendingTokens, tokenThreshold }) {
     } else if (pending === 0 && wasHighRef.current) {
       wasHighRef.current = false;
       setAnalyzing(true);
-      const t = setTimeout(() => setAnalyzing(false), 8000);
-      return () => clearTimeout(t);
+      // timerRef로 관리 — effect cleanup이 아니라 unmount 시에만 cancel.
+      // 이전 방식(return () => clearTimeout)은 다음 발화 도착 시 effect가
+      // 재실행되며 타이머가 취소돼 analyzing이 영구 stuck되는 버그가 있었음.
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => { setAnalyzing(false); timerRef.current = null; }, 8000);
     }
   }, [pending, threshold]);
+
+  React.useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   return (
     <div style={{
