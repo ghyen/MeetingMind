@@ -125,22 +125,24 @@ async def ask_json(prompt: str, *, model: str | None = None) -> dict:
         )
         text = response.choices[0].message.content
 
-    # JSON 추출 — LLM이 ```json ... ``` 형태로 감싸서 응답하는 경우 코드블록 마커 제거
+    # LLM이 ```json ... ``` 형태로 감싸서 응답하는 경우 코드블록 마커 제거
     text = text.strip()
     if text.startswith("```"):
         lines = text.split("\n")
         lines = [l for l in lines if not l.startswith("```")]
         text = "\n".join(lines).strip()
 
-    # gemma 계열은 응답 끝에 <channel|> 같은 종료 마커를 붙이는 경우가 있음 →
-    # 첫 '{' ~ 마지막 '}' 구간만 추출
-    lb, rb = text.find("{"), text.rfind("}")
-    if lb != -1 and rb > lb:
-        text = text[lb : rb + 1]
-
     try:
         return json.loads(text)
     except json.JSONDecodeError:
+        # gemma 계열은 응답 끝에 <channel|> 같은 종료 마커를 붙이는 경우가 있음 →
+        # 첫 '{' ~ 마지막 '}' 구간만 추출하여 재시도
+        lb, rb = text.find("{"), text.rfind("}")
+        if lb != -1 and rb > lb:
+            try:
+                return json.loads(text[lb : rb + 1])
+            except json.JSONDecodeError:
+                pass
         import logging
         logging.getLogger(__name__).warning(
             "LLM JSON 파싱 실패 — 응답(앞 200자): %s", text[:200]

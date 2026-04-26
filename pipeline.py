@@ -144,6 +144,21 @@ class Pipeline:
             self._stt_corrector = STTCorrector()
         return self._stt_corrector
 
+    def reset_state(self) -> None:
+        """메모리 상태 초기화 — 이전 회의 덤프 데이터가 남지 않도록."""
+        self.state = MeetingState()
+        self.meeting_id = None
+        self.topic_detector._topic_counter = 0
+        self.topic_detector.segments = []
+        self.topic_detector._recent.clear()
+        self.topic_detector._last_silence_ms = 0.0
+        self.topic_detector._utterances_since_last_check = 0
+        self.issue_structurer._cache = {}
+        self.issue_structurer._pending = {}
+        self._stt_corrector = None
+        self._last_utterance_seconds = None
+        self._manual_meeting_title = False
+
     async def start_meeting(
         self,
         title: str | None = None,
@@ -161,19 +176,7 @@ class Pipeline:
             except Exception:
                 logger.warning("이전 회의 종료 중 오류 — 상태 초기화 계속", exc_info=True)
 
-        # 메모리 상태 초기화 — 이전 회의 덤프 데이터가 남지 않도록
-        self.state = MeetingState()
-        self.topic_detector._topic_counter = 0
-        self.topic_detector.segments = []
-        self.topic_detector._recent = []
-        self.topic_detector._last_silence_ms = 0.0
-        self.topic_detector._utterances_since_last_check = 0
-        self.issue_structurer._cache = {}
-        self.issue_structurer._pending = {}
-        self._stt_corrector = None
-        self._last_utterance_seconds = None
-        self._manual_meeting_title = False
-
+        self.reset_state()
         self.meeting_id = await db.create_meeting(title=title, audio_path=audio_path)
         # 회의 컨텍스트 설정 → STT 교정에 활용
         if company or description:

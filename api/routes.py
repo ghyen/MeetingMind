@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import dataclasses
-from enum import Enum
 
 from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
 import db
+from api._utils import _serialize
 
 router = APIRouter(prefix="/api")
 
@@ -16,19 +16,6 @@ router = APIRouter(prefix="/api")
 def _get_pipeline():
     from main import pipeline
     return pipeline
-
-
-def _serialize(obj):
-    """dataclass/enum → dict 재귀 직렬화."""
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        return {k: _serialize(v) for k, v in dataclasses.asdict(obj).items()}
-    if isinstance(obj, Enum):
-        return obj.value
-    if isinstance(obj, list):
-        return [_serialize(i) for i in obj]
-    if isinstance(obj, dict):
-        return {k: _serialize(v) for k, v in obj.items()}
-    return obj
 
 
 class SimulateRequest(BaseModel):
@@ -456,19 +443,11 @@ async def get_interventions():
 @router.post("/meeting/reset")
 async def reset_meeting():
     """회의 상태 초기화."""
-    from pipeline import MeetingState
     pipe = _get_pipeline()
     # 진행 중이던 회의 종료
     if pipe.meeting_id:
         await pipe.end_meeting()
-    pipe.state = MeetingState()
-    pipe.meeting_id = None
-    pipe.topic_detector._topic_counter = 0
-    pipe.topic_detector.segments = []
-    pipe.topic_detector._recent = []
-    pipe.issue_structurer._cache = {}
-    pipe.issue_structurer._pending = {}
-    pipe._stt_corrector = None
+    pipe.reset_state()
     return {"status": "reset"}
 
 

@@ -16,8 +16,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-import dataclasses
-
+from api._utils import _serialize
 from api.routes import router as api_router
 from api.websocket import router as ws_router, manager
 from config import settings
@@ -75,16 +74,6 @@ app = FastAPI(title="MeetingMind", version="0.1.0", lifespan=lifespan)
 
 # 공유 Pipeline 인스턴스
 pipeline = Pipeline()
-
-
-def _serialize(obj):
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        return {k: _serialize(v) for k, v in dataclasses.asdict(obj).items()}
-    if isinstance(obj, list):
-        return [_serialize(i) for i in obj]
-    if isinstance(obj, dict):
-        return {k: _serialize(v) for k, v in obj.items()}
-    return obj
 
 
 async def _broadcast_event(event_type: str, data=None):

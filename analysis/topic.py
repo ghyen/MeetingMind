@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from difflib import SequenceMatcher
 import logging
 import re
@@ -26,7 +27,7 @@ class TopicDetector:
         self._topic_counter = 0
         self._last_silence_ms: float = 0.0
         self.segments: list[Topic] = []
-        self._recent: list[Utterance] = []
+        self._recent: deque[Utterance] = deque(maxlen=10)
         # 마지막 LLM 토픽 판단 후 누적된 발화 수. 임계치 도달 시 키워드 없어도 LLM 강제 호출.
         self._utterances_since_last_check: int = 0
 
@@ -40,7 +41,6 @@ class TopicDetector:
         + 강제 검사: 설정된 경우에만 N발화마다 LLM 판단 1회
         """
         self._recent.append(utterance)
-        self._recent = self._recent[-10:]  # LLM 컨텍스트용 최근 발화 유지
 
         # 첫 발화 시 초기 토픽 자동 생성 — 회의 시작 시점의 기본 토픽
         if not self.segments:

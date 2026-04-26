@@ -38,15 +38,19 @@ function RightRail({ interventions, references, onProposeNext, onDismissInterven
   );
 }
 
+function EmptyState({ Icon, text }) {
+  return (
+    <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-4)' }}>
+      <Icon width="24" height="24" style={{ opacity: 0.4, marginBottom: 8 }}/>
+      <div style={{ fontSize: 'var(--fs-sm)' }}>{text}</div>
+    </div>
+  );
+}
+
 function AlertsTab({ interventions, onProposeNext, onDismiss }) {
   const { MMI } = window.MM;
   if (interventions.length === 0) {
-    return (
-      <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-4)' }}>
-        <MMI.bell width="24" height="24" style={{ opacity: 0.4, marginBottom: 8 }}/>
-        <div style={{ fontSize: 'var(--fs-sm)' }}>지금은 조용해요. 회의가 진행되면 도움이 될 만한 순간에 알려드릴게요.</div>
-      </div>
-    );
+    return <EmptyState Icon={MMI.bell} text="지금은 조용해요. 회의가 진행되면 도움이 될 만한 순간에 알려드릴게요."/>;
   }
   return <>{interventions.map((iv, i) => <InterventionCard key={i} iv={iv} onPropose={onProposeNext} onDismiss={() => onDismiss && onDismiss(i)}/>)}</>;
 }
@@ -78,12 +82,7 @@ function InterventionCard({ iv, onPropose, onDismiss }) {
 function RefsTab({ references }) {
   const { MMI } = window.MM;
   if (references.length === 0) {
-    return (
-      <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-4)' }}>
-        <MMI.doc width="24" height="24" style={{ opacity: 0.4, marginBottom: 8 }}/>
-        <div style={{ fontSize: 'var(--fs-sm)' }}>이야기가 진행되면 관련 자료를 찾아드릴게요</div>
-      </div>
-    );
+    return <EmptyState Icon={MMI.doc} text="이야기가 진행되면 관련 자료를 찾아드릴게요"/>;
   }
   return <>{references.map((r, i) => <ReferenceCard key={i} r={r}/>)}</>;
 }
