@@ -17,3 +17,9 @@ def _serialize(obj):
     if isinstance(obj, dict):
         return {k: _serialize(v) for k, v in obj.items()}
     return obj
+
+
+def _get_pipeline():
+    """공유 Pipeline 인스턴스 lazy 조회 (순환 import 방지)."""
+    from main import pipeline
+    return pipeline

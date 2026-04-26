@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from functools import lru_cache
 
@@ -97,7 +98,7 @@ class IssueStructurer:
     ) -> IssueGraph:
         """기존 구조에 새 발화들의 변경분만 반영 (Flash 모델)."""
         existing_json = json.dumps(
-            _serialize_issue_graph(existing), ensure_ascii=False
+            dataclasses.asdict(existing), ensure_ascii=False
         )
         lines = "\n".join(f"[{u.speaker}] {u.text}" for u in new_utterances)
         prompt = (
@@ -169,19 +170,3 @@ def _parse_issue_graph(data: dict) -> IssueGraph:
     )
 
 
-def _serialize_issue_graph(graph: IssueGraph) -> dict:
-    return {
-        "topic": graph.topic,
-        "positions": [
-            {
-                "speaker": p.speaker,
-                "stance": p.stance,
-                "arguments": p.arguments,
-                "evidence": p.evidence,
-            }
-            for p in graph.positions
-        ],
-        "consensus": graph.consensus,
-        "open_questions": graph.open_questions,
-        "decision": graph.decision,
-    }

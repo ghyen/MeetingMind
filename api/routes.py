@@ -8,14 +8,9 @@ from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
 import db
-from api._utils import _serialize
+from api._utils import _get_pipeline, _serialize
 
 router = APIRouter(prefix="/api")
-
-
-def _get_pipeline():
-    from main import pipeline
-    return pipeline
 
 
 class SimulateRequest(BaseModel):

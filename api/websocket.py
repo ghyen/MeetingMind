@@ -6,16 +6,11 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from api._utils import _serialize
+from api._utils import _get_pipeline, _serialize
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _get_pipeline():
-    from main import pipeline
-    return pipeline
 
 
 class ConnectionManager:
